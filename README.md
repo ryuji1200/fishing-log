@@ -5,3 +5,5 @@
 - `index.html` … アプリ本体
 - `diag.html` … 写真EXIF・通信の診断ツール
 - 公開: Netlify （mainブランチへのpushで自動デプロイ）
+
+<!-- redeploy 2026-06-04 11:19 -->
