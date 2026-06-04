@@ -134,6 +134,13 @@
   .stat .s .n{font-size:24px; font-weight:800; color:var(--accent);}
   .stat .s .t{font-size:11px; color:var(--sub); margin-top:2px;}
   .sec-title{font-size:13px; color:var(--sub); margin:0 0 8px 2px; font-weight:700;}
+  .diag-rows{margin-top:12px;}
+  .diag-rows .r{display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #1d4d7755; font-size:14px;}
+  .diag-rows .r:last-child{border-bottom:none;}
+  .diag-rows .r .k{color:var(--sub);}
+  .diag-rows .yes{color:var(--accent2); font-weight:700;}
+  .diag-rows .no{color:var(--danger); font-weight:700;}
+  .diag-verdict{font-size:14px; font-weight:700; padding:12px; border-radius:10px; text-align:center; margin-top:12px; line-height:1.6;}
 </style>
 </head>
 <body>
@@ -236,6 +243,15 @@
         潮汐は <b>tide736.net</b>（気象庁・海上保安庁の調和定数を用いたダーウィン法予測）から取得しています。新しい日付・港を表示するときは<b>通信が必要</b>です。一度表示した潮汐は端末内にキャッシュされ、保存した釣行記録には潮汐も一緒に記録されるため、後からオフラインでも見られます。<br><br>
         ※ このファイルをローカル（file://）で開いて使う場合、tide736 のCORS制限を回避するため公開のCORSプロキシ（codetabs等）を経由します。プロキシ側の混雑・停止時は取得に失敗することがあります。安定運用したい場合は、このファイルをWeb（https）に公開すると直接取得に切り替わります。
       </div>
+    </div>
+    <div class="card">
+      <p class="sec-title">📷 写真の位置情報チェック</p>
+      <div class="note" style="margin-top:0; margin-bottom:12px;">写真を選んでも場所が出ないときに使います。その写真に撮影日時・位置情報（GPS）が残っているか調べます。<b>いつもアプリで使うのと同じ写真・同じ選び方</b>で選んでください。</div>
+      <label class="btn ghost" style="text-align:center; display:block;">
+        写真を選んでチェック
+        <input type="file" id="diag-file" accept="image/*" style="display:none;">
+      </label>
+      <div id="diag-result"></div>
     </div>
     <div class="card">
       <p class="sec-title">ホーム画面に追加すると便利</p>
@@ -858,6 +874,34 @@ async function reverseGeocodeName(lat, lon){
   }catch(e){ return null; }
 }
 
+// 設定タブ：写真の位置情報チェック（本体のreadPhotoExifを再利用）
+async function runPhotoDiag(file){
+  const box=el("diag-result");
+  box.innerHTML='<div class="note" style="margin-top:12px;"><span class="spinner" style="width:14px;height:14px"></span> 解析中…</div>';
+  const meta=await readPhotoExif(file);
+  const hasDate=!!(meta&&meta.date);
+  const hasGPS=!!(meta&&meta.lat!=null);
+  let place=null;
+  if(hasGPS){ try{ place=await reverseGeocodeName(meta.lat, meta.lon); }catch(e){} }
+  const yn=b=>b?'<span class="yes">あり ✅</span>':'<span class="no">なし ❌</span>';
+  let verdict, col;
+  if(hasGPS){ verdict='✅ この写真には位置情報があります。記録画面でこの写真を選べば場所が自動で出ます。'; col='var(--accent2)'; }
+  else if(hasDate){ verdict='⚠️ 位置情報が削除されています（撮影日時は残っています）。スマホが写真を渡すときにGPSを消しています。<br>記録画面の「📁 ファイルアプリから選ぶ」で選ぶと残ることがあります。残らない場合は場所を手入力してください。'; col='var(--warn)'; }
+  else if(meta){ verdict='⚠️ 撮影日時も位置も入っていません。'; col='var(--warn)'; }
+  else { verdict='⚠️ EXIF情報がありません（スクショ・加工・保存し直した画像などの可能性）。'; col='var(--danger)'; }
+  box.innerHTML=`
+    <div class="diag-rows">
+      <div class="r"><span class="k">ファイル形式</span><span>${esc(file.type||'不明')}</span></div>
+      <div class="r"><span class="k">サイズ</span><span>${(file.size/1024/1024).toFixed(2)} MB</span></div>
+      <div class="r"><span class="k">撮影日時</span><span>${yn(hasDate)}</span></div>
+      <div class="r"><span class="k">位置情報(GPS)</span><span>${yn(hasGPS)}</span></div>
+      ${hasDate?`<div class="r"><span class="k">日時</span><span>${esc(meta.date)} ${esc(meta.time)}</span></div>`:''}
+      ${hasGPS?`<div class="r"><span class="k">座標</span><span>${meta.lat.toFixed(5)}, ${meta.lon.toFixed(5)}</span></div>`:''}
+      ${hasGPS&&place?`<div class="r"><span class="k">推定の場所</span><span>${esc(place)}</span></div>`:''}
+    </div>
+    <div class="diag-verdict" style="background:#0b2540; border:1px solid ${col}; color:${col}">${verdict}</div>`;
+}
+
 function resetForm(){
   const now=new Date();
   el("f-date").value=now.toISOString().slice(0,10);
@@ -1105,6 +1149,7 @@ async function init(){
   el("cancel-edit").onclick=cancelEdit;
   el("export-btn").onclick=exportData;
   el("import-file").onchange=e=>{ if(e.target.files[0]) importData(e.target.files[0]); e.target.value=""; };
+  el("diag-file").onchange=e=>{ if(e.target.files[0]) runPhotoDiag(e.target.files[0]); e.target.value=""; };
   el("clear-btn").onclick=async ()=>{ if(confirm("本当にすべての釣行記録を削除しますか？この操作は元に戻せません。")){ await dbClearRecords(); await renderHistory(); toast("全データを削除しました"); } };
   document.querySelectorAll(".tabbar button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   el("lightbox").onclick=closeLightbox;
