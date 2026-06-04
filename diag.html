@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>写真の位置情報チェック</title>
+<style>
+  body{font-family:-apple-system,"Hiragino Sans",sans-serif; background:#071a2e; color:#e8f1f8; margin:0; padding:18px; line-height:1.7;}
+  h1{font-size:19px;}
+  p{font-size:14px; color:#cfe2f0;}
+  .pick{display:block; background:#36c2ff; color:#04263b; border:none; border-radius:12px; padding:16px; font-size:16px; font-weight:800; text-align:center; margin:16px 0;}
+  .card{background:#0f3050; border:1px solid #1d4d77; border-radius:12px; padding:16px; margin:14px 0;}
+  .row{display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #1d4d7755; font-size:15px;}
+  .row:last-child{border-bottom:none;}
+  .k{color:#9fc0db;}
+  .ok{color:#2bd9a8; font-weight:800;}
+  .ng{color:#ff5d6c; font-weight:800;}
+  .verdict{font-size:16px; font-weight:800; padding:14px; border-radius:12px; text-align:center; margin-top:14px;}
+  .small{font-size:12px; color:#9fc0db; word-break:break-all;}
+  input[type=file]{display:none;}
+</style>
+</head>
+<body>
+<h1>📷 写真の位置情報チェック</h1>
+<p>アプリで「位置情報がない写真です」と出る原因を調べます。<b>いつもアプリで選んでいるのと同じ写真</b>を、同じ選び方（ギャラリー／フォト）で選んでください。</p>
+<label class="pick">写真を選んでチェック
+  <input type="file" id="file" accept="image/*">
+</label>
+<div id="result"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+
+async function readExif(file){
+  const info={size:file.size, type:file.type, hasExif:false, hasDate:false, date:null, hasGPS:false, lat:null, lon:null, maker:null, model:null};
+  try{
+    const buf=new DataView(await file.slice(0, 512*1024).arrayBuffer());
+    if(buf.getUint16(0)!==0xFFD8){ info.notJpeg=true; return info; }
+    let off=2;
+    while(off+4<=buf.byteLength){
+      const marker=buf.getUint16(off); if((marker&0xFF00)!==0xFF00) break;
+      const size=buf.getUint16(off+2);
+      if(marker===0xFFE1 && buf.getUint8(off+4)===0x45 && buf.getUint8(off+5)===0x78){ // "Ex"
+        info.hasExif=true;
+        const tiff=off+10, little=buf.getUint16(tiff)===0x4949;
+        const g16=o=>buf.getUint16(o,little), g32=o=>buf.getUint32(o,little);
+        const rat=o=>{const n=g32(o),d=g32(o+4);return d?n/d:0;};
+        const ascii=(o,c)=>{let s='';for(let i=0;i<c;i++){const ch=buf.getUint8(o+i);if(ch===0)break;s+=String.fromCharCode(ch);}return s;};
+        const readIFD=ifd=>{const n=g16(ifd),r={};for(let i=0;i<n;i++){const e=ifd+2+i*12;const tag=g16(e),type=g16(e+2),cnt=g32(e+4);let v=e+8;const len=cnt*({1:1,2:1,3:2,4:4,5:8,7:1,9:4,10:8}[type]||1);if(len>4)v=tiff+g32(e+8);r[tag]={cnt,valOff:v};}return r;};
+        const d0=readIFD(tiff+g32(tiff+4));
+        if(d0[0x010F]) info.maker=ascii(d0[0x010F].valOff,d0[0x010F].cnt);
+        if(d0[0x0110]) info.model=ascii(d0[0x0110].valOff,d0[0x0110].cnt);
+        if(d0[0x8769]){ const de=readIFD(tiff+g32(d0[0x8769].valOff));
+          const t=de[0x9003]||de[0x9004];
+          if(t){ const s=ascii(t.valOff,t.cnt); if(/^\d{4}:\d{2}:\d{2}/.test(s)){ info.hasDate=true; info.date=s; } }
+        }
+        if(d0[0x8825]){
+          const gp=readIFD(tiff+g32(d0[0x8825].valOff));
+          if(gp[2]&&gp[4]&&gp[2].cnt>=1){
+            const toDeg=t=>{const n=Math.min(t.cnt,3);let v=0;for(let i=0;i<n;i++)v+=rat(t.valOff+i*8)/Math.pow(60,i);return v;};
+            let lat=toDeg(gp[2]), lon=toDeg(gp[4]);
+            const latRef=gp[1]?ascii(gp[1].valOff,gp[1].cnt):'N', lonRef=gp[3]?ascii(gp[3].valOff,gp[3].cnt):'E';
+            if(/S/i.test(latRef))lat=-lat; if(/W/i.test(lonRef))lon=-lon;
+            if(isFinite(lat)&&isFinite(lon)&&(lat||lon)){ info.hasGPS=true; info.lat=lat; info.lon=lon; }
+          }
+        }
+        break;
+      }
+      off+=2+size;
+    }
+  }catch(e){ info.err=String(e.message); }
+  return info;
+}
+
+$('file').onchange=async()=>{
+  const f=$('file').files[0]; if(!f) return;
+  $('result').innerHTML='<div class="card">解析中…</div>';
+  const i=await readExif(f);
+  const yn=(b)=>b?'<span class="ok">あり ✅</span>':'<span class="ng">なし ❌</span>';
+  let verdict, col;
+  if(i.hasGPS){ verdict='✅ この写真には位置情報があります。アプリで場所が出るはずです。'; col='#2bd9a8'; }
+  else if(i.hasDate){ verdict='⚠️ 位置情報が削除されています（撮影日時は残っています）。スマホが写真を渡すときにGPSを消しています。'; col='#ff8a5c'; }
+  else if(i.hasExif){ verdict='⚠️ EXIFはありますが日時・位置が入っていません。'; col='#ff8a5c'; }
+  else { verdict='⚠️ EXIF情報がありません（スクショ／加工画像／削除済みの可能性）。'; col='#ff5d6c'; }
+  $('result').innerHTML=`
+    <div class="card">
+      <div class="row"><span class="k">ファイル形式</span><span>${i.type||'不明'}</span></div>
+      <div class="row"><span class="k">サイズ</span><span>${(i.size/1024/1024).toFixed(2)} MB</span></div>
+      <div class="row"><span class="k">機種</span><span>${(i.maker||'')+' '+(i.model||'')||'不明'}</span></div>
+      <div class="row"><span class="k">EXIF情報</span><span>${yn(i.hasExif)}</span></div>
+      <div class="row"><span class="k">撮影日時</span><span>${yn(i.hasDate)}</span></div>
+      <div class="row"><span class="k">位置情報(GPS)</span><span>${yn(i.hasGPS)}</span></div>
+      ${i.hasDate?`<div class="row"><span class="k">日時</span><span class="small">${i.date}</span></div>`:''}
+      ${i.hasGPS?`<div class="row"><span class="k">座標</span><span class="small">${i.lat.toFixed(5)}, ${i.lon.toFixed(5)}</span></div>`:''}
+    </div>
+    <div class="verdict" style="background:${col}22;border:1px solid ${col};color:${col}">${verdict}</div>
+    <p class="small">この画面のスクショを送ってもらえれば、対処法を確定できます。</p>`;
+};
+</script>
+</body>
+</html>

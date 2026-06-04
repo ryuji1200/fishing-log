@@ -1,0 +1,4 @@
+# 静的HTMLのみ。ビルド不要、ルート直下を公開。
+[build]
+  publish = "."
+  command = ""

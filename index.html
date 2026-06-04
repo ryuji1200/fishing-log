@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b2540">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>釣果ノート</title>
+<style>
+  :root{
+    --bg:#071a2e; --bg2:#0b2540; --card:#0f3050; --card2:#12395f;
+    --line:#1d4d77; --txt:#e8f1f8; --sub:#9fc0db; --accent:#36c2ff;
+    --accent2:#2bd9a8; --warn:#ff8a5c; --danger:#ff5d6c; --gold:#ffd166;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif;
+    background:linear-gradient(180deg,var(--bg),var(--bg2)); color:var(--txt);
+    min-height:100vh; padding-bottom:84px;
+  }
+  header{
+    position:sticky; top:0; z-index:20;
+    background:rgba(7,26,46,.92); backdrop-filter:blur(8px);
+    padding:calc(env(safe-area-inset-top) + 12px) 16px 12px;
+    border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:10px;
+  }
+  header h1{font-size:18px; margin:0; font-weight:700; letter-spacing:.5px;}
+  header .wave{font-size:20px;}
+  main{padding:14px 14px 20px; max-width:560px; margin:0 auto;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; margin-bottom:14px; box-shadow:0 4px 14px rgba(0,0,0,.25);}
+  label{display:block; font-size:12px; color:var(--sub); margin:0 0 5px 2px;}
+  .row{display:flex; gap:10px;}
+  .row>*{flex:1;}
+  input,select,textarea{
+    width:100%; background:var(--bg2); color:var(--txt); border:1px solid var(--line);
+    border-radius:10px; padding:11px 12px; font-size:16px; outline:none; font-family:inherit;
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);}
+  textarea{resize:vertical; min-height:64px;}
+  .field{margin-bottom:12px;}
+  .btn{
+    border:none; border-radius:12px; padding:13px 16px; font-size:15px; font-weight:700;
+    color:#04263b; background:var(--accent); width:100%; cursor:pointer; font-family:inherit;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn.alt{background:var(--accent2);}
+  .btn.ghost{background:transparent; color:var(--sub); border:1px solid var(--line); font-weight:600;}
+  .btn.sm{padding:8px 12px; font-size:13px; width:auto;}
+  .tide-head{display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:8px; flex-wrap:wrap; gap:6px;}
+  .tide-type{font-size:22px; font-weight:800;}
+  .badge{display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:700;}
+  .b-oshio{background:#ff5d6c33; color:#ff8b96; border:1px solid #ff5d6c66;}
+  .b-chushio{background:#36c2ff33; color:#7fd8ff; border:1px solid #36c2ff66;}
+  .b-koshio{background:#2bd9a833; color:#7ff0d2; border:1px solid #2bd9a866;}
+  .b-other{background:#ffd16633; color:#ffe0a0; border:1px solid #ffd16666;}
+  .moon{font-size:12px; color:var(--sub);}
+  canvas{width:100%; display:block; border-radius:10px; background:linear-gradient(180deg,#08233d,#0a2b49);}
+  .sunmoon{display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; font-size:12px; color:var(--sub);}
+  .sunmoon b{color:var(--txt); font-weight:600;}
+  .extrema{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
+  .ext{font-size:12px; padding:5px 9px; border-radius:8px; background:var(--bg2); border:1px solid var(--line);}
+  .ext .h{color:var(--accent); font-weight:700;}
+  .ext .l{color:var(--accent2); font-weight:700;}
+  .tide-status{font-size:13px; color:var(--sub); padding:18px 4px; text-align:center;}
+  .tide-status.err{color:var(--warn);}
+  .spinner{display:inline-block; width:16px; height:16px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; vertical-align:-3px; margin-right:7px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .fish-item{display:flex; gap:8px; align-items:flex-start; margin-bottom:10px;}
+  .fish-item input{padding:9px 10px;}
+  .fish-item .fields{flex:1; display:flex; flex-direction:column; gap:6px;}
+  .fish-item .frow{display:flex; gap:8px;}
+  .exif-hint{display:none; font-size:11px; color:var(--sub); align-items:center; gap:8px;}
+  .exif-hint.show{display:flex;}
+  .exif-hint .apply{background:var(--accent2); color:#04263b; border:none; border-radius:8px; padding:3px 9px; font-size:11px; font-weight:700; cursor:pointer; font-family:inherit;}
+  .exif-hint .applied{color:var(--accent2); font-weight:700;}
+  .edit-banner{display:flex; align-items:center; justify-content:space-between; gap:10px; background:#ffd16622; border:1px solid #ffd16677; color:var(--gold); border-radius:12px; padding:10px 14px; margin-bottom:12px; font-size:13px; font-weight:700;}
+  .edit-banner button{background:transparent; border:1px solid #ffd16677; color:var(--gold); border-radius:8px; padding:6px 12px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;}
+  .fish-item .name{flex:2;}
+  .fish-item .size{flex:1.1;}
+  .fish-item .cnt{flex:.9;}
+  .fish-item .del{flex:0 0 auto; width:38px; background:transparent; border:1px solid var(--line); color:var(--danger); border-radius:9px; font-size:18px; padding:8px 0; align-self:stretch;}
+  .photo-btn{flex:0 0 auto; width:54px; height:54px; border-radius:10px; border:1px dashed var(--line); background:var(--bg2);
+    color:var(--sub); font-size:22px; cursor:pointer; padding:0; overflow:hidden; position:relative; display:flex; align-items:center; justify-content:center;}
+  .photo-btn .ph-content{width:100%; height:100%; display:flex; align-items:center; justify-content:center;}
+  .photo-btn img{width:100%; height:100%; object-fit:cover; display:block;}
+  .photo-btn .rm{position:absolute; top:1px; right:1px; width:18px; height:18px; line-height:16px; border-radius:50%;
+    background:rgba(0,0,0,.6); color:#fff; font-size:13px; border:none; padding:0; display:none; z-index:2;}
+  .photo-btn.has{border-style:solid;}
+  .photo-btn.has .rm{display:block;}
+  .fish-photos{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .fish-photos img{width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line); cursor:pointer;}
+  .lightbox{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; padding:16px;}
+  .lightbox.on{display:flex;}
+  .lightbox img{max-width:100%; max-height:100%; border-radius:8px;}
+  .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;}
+  .chip{font-size:12px; padding:5px 10px; border-radius:16px; background:var(--bg2); border:1px solid var(--line); color:var(--sub); cursor:pointer;}
+  .chip:active{background:var(--card2);}
+  .note{font-size:11px; color:var(--sub); opacity:.8; line-height:1.5; margin-top:6px;}
+  .tabbar{
+    position:fixed; bottom:0; left:0; right:0; z-index:30;
+    background:rgba(7,26,46,.96); backdrop-filter:blur(8px); border-top:1px solid var(--line);
+    display:flex; padding:6px 8px calc(env(safe-area-inset-bottom) + 6px);
+  }
+  .tabbar button{flex:1; background:none; border:none; color:var(--sub); font-size:11px; padding:6px 0; font-family:inherit; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:3px;}
+  .tabbar button .ic{font-size:20px;}
+  .tabbar button.on{color:var(--accent);}
+  .view{display:none;}
+  .view.on{display:block;}
+  .rec{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:12px;}
+  .rec .top{display:flex; justify-content:space-between; align-items:center; gap:8px;}
+  .rec .dt{font-weight:700; font-size:15px;}
+  .rec .loc{font-size:13px; color:var(--sub); margin-top:2px;}
+  .rec .fishline{margin-top:8px; font-size:14px;}
+  .rec .fishline .fname{font-weight:700; color:var(--gold);}
+  .rec .kv{font-size:13px; color:var(--sub); margin-top:6px;}
+  .rec .kv b{color:var(--txt); font-weight:600;}
+  .rec .acts{display:flex; gap:8px; margin-top:10px;}
+  .empty{text-align:center; color:var(--sub); padding:40px 10px; font-size:14px; line-height:1.7;}
+  .mini-canvas{margin-top:8px;}
+  .toast{
+    position:fixed; left:50%; bottom:90px; transform:translateX(-50%);
+    background:var(--accent2); color:#04263b; font-weight:700; padding:11px 18px; border-radius:30px;
+    font-size:14px; z-index:50; opacity:0; transition:opacity .25s, transform .25s; pointer-events:none;
+    box-shadow:0 6px 20px rgba(0,0,0,.4);
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
+  .stat{display:flex; gap:10px; margin-bottom:14px;}
+  .stat .s{flex:1; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; text-align:center;}
+  .stat .s .n{font-size:24px; font-weight:800; color:var(--accent);}
+  .stat .s .t{font-size:11px; color:var(--sub); margin-top:2px;}
+  .sec-title{font-size:13px; color:var(--sub); margin:0 0 8px 2px; font-weight:700;}
+</style>
+</head>
+<body>
+<header>
+  <span class="wave">🎣</span>
+  <h1>釣果ノート</h1>
+</header>
+
+<main>
+  <!-- ========== 記録タブ ========== -->
+  <section id="view-log" class="view on">
+    <div id="edit-banner" class="edit-banner" style="display:none;">
+      <span>✏️ 釣行記録を編集中です</span>
+      <button id="cancel-edit" type="button">編集をやめる</button>
+    </div>
+    <div class="card">
+      <div class="note" style="margin-top:0; margin-bottom:12px;">📸 下の「釣れた魚」に<b>位置情報つきの写真</b>を入れると、日時・場所・潮汐を自動で読み取ります。手入力でもOK。</div>
+      <div class="row field">
+        <div>
+          <label>日付</label>
+          <input type="date" id="f-date">
+        </div>
+        <div>
+          <label>時間</label>
+          <input type="time" id="f-time">
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>場所（釣り場・スポット名）</label>
+        <input type="text" id="f-loc" placeholder="例：豊洲ぐるり公園 / 横浜港 / 〇〇漁港" list="loc-list" autocomplete="off">
+        <datalist id="loc-list"></datalist>
+        <div class="chips" id="loc-chips"></div>
+        <div class="note" id="port-info" style="margin-top:8px;">釣果写真を選ぶと、撮影日時・場所・潮汐を自動で読み取ります。場所の手入力でもOK。</div>
+      </div>
+    </div>
+
+    <!-- 潮汐カード -->
+    <div class="card">
+      <div class="tide-head">
+        <div>
+          <div class="tide-type" id="tide-type">—</div>
+          <div class="moon" id="moon-info"></div>
+        </div>
+        <span class="badge b-other" id="tide-badge">潮回り</span>
+      </div>
+      <div id="tide-status" class="tide-status">日付と港を選ぶと潮汐を表示します</div>
+      <canvas id="tide-canvas" height="200" style="display:none;"></canvas>
+      <div class="sunmoon" id="sunmoon"></div>
+      <div class="extrema" id="extrema"></div>
+      <div class="note" id="tide-source"></div>
+    </div>
+
+    <!-- 釣果カード -->
+    <div class="card">
+      <p class="sec-title">🐟 釣れた魚</p>
+      <div id="fish-list"></div>
+      <button class="btn ghost sm" id="add-fish" style="width:100%; margin-top:2px;">＋ 魚を追加</button>
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <label>使ったタックル</label>
+        <textarea id="f-tackle" placeholder="ロッド / リール / ライン / ルアー・仕掛けなど"></textarea>
+        <div class="chips" id="tackle-chips"></div>
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>メモ</label>
+        <textarea id="f-memo" placeholder="天気・風・水温・当たった時間帯・反省点など"></textarea>
+      </div>
+    </div>
+
+    <button class="btn" id="save-btn">この釣行を保存する</button>
+    <button class="btn ghost" id="reset-btn" style="margin-top:10px;">入力をクリア</button>
+  </section>
+
+  <!-- ========== 履歴タブ ========== -->
+  <section id="view-history" class="view">
+    <div class="stat">
+      <div class="s"><div class="n" id="st-trips">0</div><div class="t">釣行回数</div></div>
+      <div class="s"><div class="n" id="st-fish">0</div><div class="t">釣れた魚（匹）</div></div>
+      <div class="s"><div class="n" id="st-species">0</div><div class="t">魚種</div></div>
+    </div>
+    <div id="rec-list"></div>
+  </section>
+
+  <!-- ========== 設定タブ ========== -->
+  <section id="view-settings" class="view">
+    <div class="card">
+      <p class="sec-title">データのバックアップ</p>
+      <div class="note" style="margin-top:0; margin-bottom:12px;">釣行記録と写真はこのスマホ／ブラウザ内（IndexedDB）に保存されます。写真も含めて端末の空き容量まで（数百MB〜GB級）保存できます。機種変更前やブラウザのデータ削除前に書き出しておくと安心です（写真も一緒に書き出されます）。</div>
+      <button class="btn alt" id="export-btn">データを書き出す（JSON）</button>
+      <label class="btn ghost" style="margin-top:10px; text-align:center; display:block;">
+        データを読み込む
+        <input type="file" id="import-file" accept="application/json,.json" style="display:none;">
+      </label>
+    </div>
+    <div class="card">
+      <p class="sec-title">潮汐データについて</p>
+      <div class="note" style="margin-top:0;">
+        潮汐は <b>tide736.net</b>（気象庁・海上保安庁の調和定数を用いたダーウィン法予測）から取得しています。新しい日付・港を表示するときは<b>通信が必要</b>です。一度表示した潮汐は端末内にキャッシュされ、保存した釣行記録には潮汐も一緒に記録されるため、後からオフラインでも見られます。<br><br>
+        ※ このファイルをローカル（file://）で開いて使う場合、tide736 のCORS制限を回避するため公開のCORSプロキシ（codetabs等）を経由します。プロキシ側の混雑・停止時は取得に失敗することがあります。安定運用したい場合は、このファイルをWeb（https）に公開すると直接取得に切り替わります。
+      </div>
+    </div>
+    <div class="card">
+      <p class="sec-title">ホーム画面に追加すると便利</p>
+      <div class="note" style="margin-top:0;">
+        iPhone(Safari)：共有ボタン →「ホーム画面に追加」<br>
+        Android(Chrome)：メニュー →「ホーム画面に追加」
+      </div>
+    </div>
+    <div class="card">
+      <p class="sec-title" style="color:var(--danger);">危険ゾーン</p>
+      <button class="btn ghost" id="clear-btn" style="color:var(--danger); border-color:var(--danger);">すべての釣行記録を削除</button>
+    </div>
+  </section>
+</main>
+
+<nav class="tabbar">
+  <button data-view="log" class="on"><span class="ic">📝</span>記録</button>
+  <button data-view="history"><span class="ic">📚</span>履歴</button>
+  <button data-view="settings"><span class="ic">⚙️</span>設定</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+<div class="lightbox" id="lightbox"><img id="lightbox-img" src="" alt=""></div>
+
+<script>
+"use strict";
+const el = id => document.getElementById(id);
+
+/* ===================== ストレージ ===================== */
+// 釣行記録は IndexedDB に保存（写真は Blob のまま格納＝base64の膨張なし・容量はGB級）。
+// 場所リストなど小さな設定は localStorage のまま。
+const STORE_KEY = "fishing-log-records-v1";   // 旧localStorage（移行元）
+const LOC_KEY   = "fishing-log-locations-v1";
+const DEFAULT_LOCS = ["豊洲ぐるり公園","若洲海浜公園","お台場海浜公園","城南島海浜公園","葛西臨海公園"];
+const COMMON_TACKLE = ["ジグヘッド","メタルジグ","ワーム","ミノー","バイブレーション","エサ(青イソメ)","サビキ","エギ","テンヤ"];
+
+/* ---- IndexedDB 基盤 ---- */
+const DB_NAME="fishing-log-db", DB_VER=1, REC_STORE="records";
+let _dbPromise=null;
+function openDB(){
+  if(_dbPromise) return _dbPromise;
+  _dbPromise=new Promise((resolve,reject)=>{
+    const req=indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded=e=>{
+      const db=e.target.result;
+      if(!db.objectStoreNames.contains(REC_STORE)) db.createObjectStore(REC_STORE,{keyPath:"id"});
+    };
+    req.onsuccess=e=>resolve(e.target.result);
+    req.onerror=e=>reject(e.target.error);
+  });
+  return _dbPromise;
+}
+function idbTx(mode,fn){
+  return openDB().then(db=>new Promise((resolve,reject)=>{
+    const tx=db.transaction(REC_STORE,mode);
+    const store=tx.objectStore(REC_STORE);
+    let result;
+    Promise.resolve(fn(store)).then(r=>{result=r;});
+    tx.oncomplete=()=>resolve(result);
+    tx.onerror=()=>reject(tx.error);
+    tx.onabort=()=>reject(tx.error||new Error("transaction aborted"));
+  }));
+}
+// 記録の取得（作成日時の新しい順）
+function dbGetAllRecords(){
+  return idbTx("readonly",store=>new Promise((res,rej)=>{
+    const out=[]; const c=store.openCursor();
+    c.onsuccess=e=>{ const cur=e.target.result; if(cur){ out.push(cur.value); cur.continue(); } else { out.sort((a,b)=>b.createdAt-a.createdAt); res(out); } };
+    c.onerror=e=>rej(e.target.error);
+  }));
+}
+function dbPutRecord(rec){ return idbTx("readwrite",store=>store.put(rec)); }
+function dbDeleteRecord(id){ return idbTx("readwrite",store=>store.delete(id)); }
+function dbClearRecords(){ return idbTx("readwrite",store=>store.clear()); }
+
+/* ---- 画像変換ヘルパー（Blob ⇔ dataURL） ---- */
+function dataURLtoBlob(dataURL){ return fetch(dataURL).then(r=>r.blob()); }
+function blobToDataURL(blob){
+  return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); });
+}
+
+/* ---- 旧localStorageからの自動移行 ---- */
+async function migrateFromLocalStorage(){
+  let raw; try{ raw=localStorage.getItem(STORE_KEY); }catch(e){ return; }
+  if(!raw) return;
+  let recs; try{ recs=JSON.parse(raw); }catch(e){ recs=null; }
+  if(Array.isArray(recs) && recs.length){
+    for(const r of recs){
+      if(Array.isArray(r.fish)){
+        for(const f of r.fish){
+          if(typeof f.photo==="string" && f.photo.startsWith("data:")){
+            try{ f.photo=await dataURLtoBlob(f.photo); }catch(e){ f.photo=null; }
+          }
+        }
+      }
+      try{ await dbPutRecord(r); }catch(e){}
+    }
+  }
+  try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+}
+
+function loadLocs(){ try{ const s=JSON.parse(localStorage.getItem(LOC_KEY)||"null"); return s&&s.length?s:DEFAULT_LOCS.slice(); }catch(e){ return DEFAULT_LOCS.slice(); } }
+function saveLocs(l){ localStorage.setItem(LOC_KEY, JSON.stringify(l)); }
+
+/* ===================== 潮汐API（tide736.net） ===================== */
+const TIDE_CACHE_PREFIX = "tide-cache:";
+const HARBOR_CACHE_PREFIX = "harbor-cache:";
+
+function parseHM(t){ const p=String(t).trim().split(":"); return (+p[0])*60 + (+p[1]); }
+
+// タイムアウト付きfetch（死んだ経路で固まらないように）
+function fetchWithTimeout(url, ms){
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), ms);
+  return fetch(url, {signal:ctrl.signal}).finally(()=>clearTimeout(timer));
+}
+
+// 直接呼べるAPI（Photon・国土地理院はCORS対応）用。プロキシは挟まない。
+async function fetchText(url, opts){
+  opts = opts || {};
+  const r = await fetchWithTimeout(url, opts.timeout || 8000);
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return await r.text();
+}
+
+// tide736.net はブラウザから直接呼べない(CORS非対応)ので、公開プロキシ経由で取得する。
+// 直接アクセスは「試すだけ無駄でタイムアウトの原因」になるため最初から行わない。
+const TIDE_PROXIES = [
+  u => "https://cors.eu.org/" + u,
+  u => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u),
+  u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+];
+async function fetchTide(url){
+  let lastErr;
+  for(const wrap of TIDE_PROXIES){
+    try{
+      const r = await fetchWithTimeout(wrap(url), 8000);
+      if(r.ok){
+        const t = await r.text();
+        // プロキシが返すエラーページ("error code: 520"等)を成功と誤認しない
+        if(t && !/^error code:\s*\d+/i.test(t.trim())) return t;
+      }
+      lastErr = new Error("HTTP "+r.status);
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error("潮汐データの取得に失敗しました");
+}
+
+// 港リスト取得（都道府県ごと、キャッシュあり）
+async function getHarbors(pc){
+  const ck = HARBOR_CACHE_PREFIX+pc;
+  const c = localStorage.getItem(ck);
+  if(c){ try{ return JSON.parse(c); }catch(e){} }
+  const now=new Date();
+  const url=`https://tide736.net/api/get_tide.php?pc=${pc}&hc=1&yr=${now.getFullYear()}&mn=${now.getMonth()+1}&dy=${now.getDate()}&rg=day`;
+  const j=JSON.parse(await fetchTide(url));
+  const list=(j.tide&&j.tide.link)? j.tide.link.map(h=>({hc:h.harbor_code, name:h.harbor_namej, lat:+h.latitude, lon:+h.longitude})) : [];
+  if(list.length) localStorage.setItem(ck, JSON.stringify(list));
+  return list;
+}
+
+/* ===================== 場所→最寄り基準港（自動解決） ===================== */
+const GEO_CACHE_PREFIX = "geo-cache:";
+// 都道府県名（JISコード順, index+1 = コード = tide736のpc）
+const PREF_NAMES = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
+// Photonの住所プロパティから都道府県コードを推定（GSI逆ジオが使えない沖合用フォールバック）
+function prefFromProps(p){
+  if(!p) return null;
+  const cands=[p.state,p.county,p.city,p.district,p.region,p.locality,p.name];
+  for(const v of cands){ if(!v) continue; const i=PREF_NAMES.indexOf(v); if(i>=0) return i+1; }
+  for(const v of cands){ if(!v) continue; for(let i=0;i<PREF_NAMES.length;i++){ if(String(v).startsWith(PREF_NAMES[i])) return i+1; } }
+  return null;
+}
+function haversine(a1,o1,a2,o2){
+  const R=6371,toR=Math.PI/180;
+  const dLat=(a2-a1)*toR, dLon=(o2-o1)*toR;
+  const s=Math.sin(dLat/2)**2 + Math.cos(a1*toR)*Math.cos(a2*toR)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+// 地名 → {lat, lon, pc(都道府県コード)}
+//  1) Photon(komoot/OSM)で地名→緯度経度（POI名にも強い・CORS対応）
+//  2) 国土地理院の逆ジオで緯度経度→市区町村コード→都道府県コード（CORS対応）
+// どちらも直接呼べる（プロキシ不要）。結果はキャッシュ。
+async function geocode(place){
+  const ck=GEO_CACHE_PREFIX+place;
+  const c=localStorage.getItem(ck);
+  if(c){ try{ return JSON.parse(c); }catch(e){} }
+  // 1) 地名検索（東京湾を中心にバイアス。同名地名が複数あるとき湾奥側を優先しやすくする）
+  const BIAS_LAT=35.55, BIAS_LON=139.85, NEAR_KM=200;
+  const sj=JSON.parse(await fetchText(`https://photon.komoot.io/api/?q=${encodeURIComponent(place)}&limit=8&lang=default&lat=${BIAS_LAT}&lon=${BIAS_LON}`));
+  if(!sj.features || !sj.features.length) throw new Error("場所が見つかりませんでした");
+  // バイアス点から最も近い候補を選ぶ。ただし全候補が遠い(>NEAR_KM)場合は検索順の先頭を採用。
+  let f=sj.features[0], bestD=Infinity;
+  for(const cand of sj.features){
+    const clo=+cand.geometry.coordinates[0], cla=+cand.geometry.coordinates[1];
+    const d=haversine(BIAS_LAT,BIAS_LON,cla,clo);
+    if(d<bestD){ bestD=d; f=cand; }
+  }
+  if(bestD>NEAR_KM) f=sj.features[0];
+  const lon=+f.geometry.coordinates[0], lat=+f.geometry.coordinates[1];
+  // 2) 都道府県コード：まずGSI逆ジオ（陸上で最も確実）、ダメならPhotonの住所から推定（沖合の堤防・桟橋など）
+  let pc=null;
+  try{
+    const rj=JSON.parse(await fetchText(`https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`));
+    const muni=rj.results && rj.results.muniCd;
+    if(muni && /^\d{4,5}$/.test(String(muni))) pc=parseInt(String(muni).slice(0,2),10);
+  }catch(e){}
+  if(!pc) pc=prefFromProps(f.properties);
+  if(!pc) throw new Error("都道府県を特定できませんでした");
+  const geo={lat, lon, pc, label:(f.properties&&(f.properties.name||place))||place};
+  try{ localStorage.setItem(ck, JSON.stringify(geo)); }catch(e){}
+  return geo;
+}
+// 同一都道府県内で最寄りの基準港を選ぶ
+async function nearestHarbor(pc, lat, lon){
+  const list=await getHarbors(pc);
+  if(!list.length) throw new Error("この地域の潮汐基準港が見つかりませんでした");
+  let best=null, bestD=Infinity;
+  for(const h of list){
+    if(isNaN(h.lat)||isNaN(h.lon)) continue;
+    const d=haversine(lat,lon,h.lat,h.lon);
+    if(d<bestD){ bestD=d; best=h; }
+  }
+  if(!best) best=list[0];
+  return {hc:best.hc, name:best.name, distKm:bestD};
+}
+
+// 指定日の潮汐取得（キャッシュあり）→ 正規化オブジェクト
+async function getTide(pc, hc, dateStr){
+  const ck = `${TIDE_CACHE_PREFIX}${pc}:${hc}:${dateStr}`;
+  const c = localStorage.getItem(ck);
+  if(c){ try{ return JSON.parse(c); }catch(e){} }
+  const [y,m,d]=dateStr.split("-").map(Number);
+  const url=`https://tide736.net/api/get_tide.php?pc=${pc}&hc=${hc}&yr=${y}&mn=${m}&dy=${d}&rg=day`;
+  const j=JSON.parse(await fetchTide(url));
+  if(j.status!==1 || !j.tide || !j.tide.chart || !j.tide.chart[dateStr]) throw new Error("データ取得に失敗しました");
+  const ch=j.tide.chart[dateStr];
+  const out={
+    pc, hc, date:dateStr,
+    harborName: j.tide.port.harbor_namej,
+    tideType: (ch.moon&&ch.moon.title)||"",
+    moonAge: (ch.moon&&ch.moon.age!=null)? Number(ch.moon.age) : null,
+    sunrise: ch.sun&&ch.sun.rise, sunset: ch.sun&&ch.sun.set,
+    moonrise: ch.moon&&ch.moon.rise, moonset: ch.moon&&ch.moon.set,
+    points: (ch.tide||[]).map(p=>({m:parseHM(p.time), h:Math.round(p.cm)})),
+    flood: (ch.flood||[]).map(p=>({m:parseHM(p.time), h:Math.round(p.cm)})),
+    edd:   (ch.edd||[]).map(p=>({m:parseHM(p.time), h:Math.round(p.cm)})),
+  };
+  try{ localStorage.setItem(ck, JSON.stringify(out)); }catch(e){}
+  return out;
+}
+
+/* ===================== 描画 ===================== */
+function drawTide(canvas, tide, markMin){
+  const pts=tide.points;
+  if(!pts||!pts.length) return;
+  const dpr=window.devicePixelRatio||1;
+  // 意図した表示高さは data-h に保持（canvas.height属性は描画解像度で上書きされるため当てにしない）
+  const cssH=parseInt(canvas.dataset.h)|| parseInt(canvas.getAttribute("height"))||200;
+  canvas.dataset.h=cssH;
+  canvas.style.height=cssH+"px"; // CSS高さを固定（再描画で縦長に膨張するのを防ぐ）
+  const cssW=canvas.clientWidth||320;
+  canvas.width=cssW*dpr; canvas.height=cssH*dpr;
+  const ctx=canvas.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  const padL=8,padR=8,padT=14,padB=22;
+  const W=cssW-padL-padR, H=cssH-padT-padB;
+  let hmin=Infinity,hmax=-Infinity;
+  for(const p of pts){ if(p.h<hmin)hmin=p.h; if(p.h>hmax)hmax=p.h; }
+  const range=Math.max(20,hmax-hmin); hmin-=range*0.12; hmax+=range*0.18;
+  const X=m=>padL+(m/1440)*W;
+  const Y=h=>padT+(1-(h-hmin)/(hmax-hmin))*H;
+  const hAt=m=>{ // 線形補間
+    for(let i=1;i<pts.length;i++){ if(pts[i].m>=m){ const a=pts[i-1],b=pts[i]; const t=(m-a.m)/(b.m-a.m||1); return a.h+(b.h-a.h)*t; } }
+    return pts[pts.length-1].h;
+  };
+
+  ctx.strokeStyle="rgba(255,255,255,.07)"; ctx.fillStyle="#9fc0db"; ctx.font="10px sans-serif"; ctx.textAlign="center";
+  for(let hr=0;hr<=24;hr+=6){ const x=X(hr*60); ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+H); ctx.stroke(); ctx.fillText(hr+"時",x,cssH-7); }
+
+  ctx.beginPath(); ctx.moveTo(X(pts[0].m),Y(pts[0].h));
+  for(const p of pts) ctx.lineTo(X(p.m),Y(p.h));
+  ctx.lineTo(X(pts[pts.length-1].m),padT+H); ctx.lineTo(X(pts[0].m),padT+H); ctx.closePath();
+  const grad=ctx.createLinearGradient(0,padT,0,padT+H);
+  grad.addColorStop(0,"rgba(54,194,255,.45)"); grad.addColorStop(1,"rgba(54,194,255,.02)");
+  ctx.fillStyle=grad; ctx.fill();
+
+  ctx.beginPath(); ctx.moveTo(X(pts[0].m),Y(pts[0].h));
+  for(const p of pts) ctx.lineTo(X(p.m),Y(p.h));
+  ctx.strokeStyle="#36c2ff"; ctx.lineWidth=2.5; ctx.stroke();
+
+  for(const e of (tide.flood||[])){ ctx.beginPath(); ctx.arc(X(e.m),Y(e.h),3.5,0,Math.PI*2); ctx.fillStyle="#36c2ff"; ctx.fill(); }
+  for(const e of (tide.edd||[])){ ctx.beginPath(); ctx.arc(X(e.m),Y(e.h),3.5,0,Math.PI*2); ctx.fillStyle="#2bd9a8"; ctx.fill(); }
+
+  if(markMin!=null && markMin>=0 && markMin<=1440){
+    const x=X(markMin), y=Y(hAt(markMin));
+    ctx.strokeStyle="#ffd166"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+H); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(x,y,4.5,0,Math.PI*2); ctx.fillStyle="#ffd166"; ctx.fill();
+    ctx.strokeStyle="#04263b"; ctx.lineWidth=1.5; ctx.stroke();
+  }
+}
+
+function fmtMin(m){ return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0"); }
+function badgeClass(name){ return "badge "+({"大潮":"b-oshio","中潮":"b-chushio","小潮":"b-koshio"}[name]||"b-other"); }
+
+/* ===================== 潮汐表示 ===================== */
+let currentTide=null;       // 記録タブに表示中の潮汐
+let currentPort=null;       // {pc,hc,name} 自動解決した基準港
+let tideReqToken=0;         // 競合する非同期リクエストの打ち消し用
+// ユーザーが手で編集したか（写真の自動反映で上書きしないため）
+let userEditedDate=false, userEditedTime=false, userEditedLoc=false;
+// 既存記録の編集中フラグ（null=新規作成）
+let editingId=null, editingCreatedAt=null;
+
+function markFromTime(){ const t=el("f-time").value; return t? parseHM(t): null; }
+function setPortInfo(html){ el("port-info").innerHTML=html; }
+
+// 緯度経度→都道府県コード（GSI逆ジオ→ダメならPhoton住所）。geocode()内と同等のロジック。
+let _lastGeoErr="";
+async function prefFromCoords(lat, lon){
+  let pc=null; _lastGeoErr="";
+  try{
+    const rj=JSON.parse(await fetchText(`https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`));
+    const muni=rj.results && rj.results.muniCd;
+    if(muni && /^\d{4,5}$/.test(String(muni))) pc=parseInt(String(muni).slice(0,2),10);
+  }catch(e){ _lastGeoErr="GSI:"+(e&&e.message||e); }
+  if(!pc){
+    try{
+      const j=JSON.parse(await fetchText(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=default`));
+      const p=j.features && j.features[0] && j.features[0].properties;
+      pc=prefFromProps(p);
+      if(!pc) _lastGeoErr+=" Photon:住所判定不可";
+    }catch(e){ _lastGeoErr+=" Photon:"+(e&&e.message||e); }
+  }
+  return pc;
+}
+
+// coords を渡すと地名検索を省き、その座標から直接 都道府県→最寄り港→潮汐 を解決する（写真GPS用）
+// ※ addEventListener から呼ばれるとEventオブジェクトが渡るので、lat/lonを持つ時だけ座標経路とみなす
+async function refreshTide(coords){
+  if(!(coords && typeof coords.lat==="number" && typeof coords.lon==="number")) coords=null;
+  const dateStr=el("f-date").value;
+  const place=el("f-loc").value.trim();
+  if(!dateStr) return;
+  const token=++tideReqToken;
+
+  if(!place && !coords){
+    currentTide=null; currentPort=null;
+    el("tide-type").textContent="—"; el("moon-info").textContent="";
+    el("tide-badge").className="badge b-other"; el("tide-badge").textContent="潮回り";
+    el("tide-canvas").style.display="none"; el("sunmoon").innerHTML=""; el("extrema").innerHTML=""; el("tide-source").textContent="";
+    el("tide-status").style.display="block"; el("tide-status").className="tide-status";
+    el("tide-status").textContent="写真を選ぶか、場所を入力すると潮汐を表示します";
+    setPortInfo("釣果写真を選ぶと、撮影日時・場所・潮汐を自動で読み取ります。場所の手入力でもOK。");
+    return;
+  }
+
+  el("tide-status").style.display="block"; el("tide-status").className="tide-status";
+  el("tide-status").innerHTML='<span class="spinner"></span>場所と潮汐を取得中…';
+  el("tide-canvas").style.display="none"; el("sunmoon").innerHTML=""; el("extrema").innerHTML=""; el("tide-source").textContent="";
+  setPortInfo('<span class="spinner"></span>最寄りの基準港を判定中…');
+
+  try{
+    let pc, lat, lon;
+    if(coords){
+      lat=coords.lat; lon=coords.lon;
+      pc=await prefFromCoords(lat, lon);
+      if(token!==tideReqToken) return;
+      if(!pc) throw new Error("写真の位置から地域を特定できませんでした"+(_lastGeoErr?" ["+_lastGeoErr.trim()+"]":""));
+    }else{
+      const geo=await geocode(place);
+      if(token!==tideReqToken) return;
+      pc=geo.pc; lat=geo.lat; lon=geo.lon;
+    }
+    const harbor=await nearestHarbor(pc, lat, lon);
+    if(token!==tideReqToken) return;
+    currentPort={pc, hc:harbor.hc, name:harbor.name};
+    setPortInfo(`📍 潮汐の基準港（自動）：<b style="color:var(--txt)">${esc(harbor.name)}</b>`);
+
+    const tide=await getTide(pc, harbor.hc, dateStr);
+    if(token!==tideReqToken) return; // 古いリクエストは破棄
+    currentTide=tide;
+    renderTide(tide);
+  }catch(e){
+    if(token!==tideReqToken) return;
+    currentTide=null; currentPort=null;
+    el("tide-type").textContent="—"; el("moon-info").textContent="";
+    el("tide-badge").className="badge b-other"; el("tide-badge").textContent="潮回り";
+    el("tide-canvas").style.display="none";
+    el("tide-status").className="tide-status err";
+    el("tide-status").innerHTML="潮汐を取得できませんでした（"+esc(e.message)+"）。<br>地名を具体的に（市区町村名・港名など）変えるか、電波のある場所で再度お試しください。";
+    setPortInfo("最寄りの基準港を特定できませんでした。");
+  }
+}
+
+function renderTide(tide){
+  el("tide-status").style.display="none";
+  const cv=el("tide-canvas"); cv.style.display="block";
+  drawTide(cv, tide, markFromTime());
+
+  el("tide-type").textContent = tide.tideType||"—";
+  el("moon-info").textContent = tide.moonAge!=null ? `🌙 月齢 ${tide.moonAge.toFixed(1)}` : "";
+  el("tide-badge").className = badgeClass(tide.tideType);
+  el("tide-badge").textContent = tide.tideType||"潮回り";
+
+  // 満干潮
+  const ev=[];
+  (tide.flood||[]).forEach(e=>ev.push({...e,type:"high"}));
+  (tide.edd||[]).forEach(e=>ev.push({...e,type:"low"}));
+  ev.sort((a,b)=>a.m-b.m);
+  const wrap=el("extrema"); wrap.innerHTML="";
+  ev.forEach(e=>{ const d=document.createElement("div"); d.className="ext";
+    d.innerHTML=`<span class="${e.type==='high'?'h':'l'}">${e.type==='high'?'満潮':'干潮'}</span> ${fmtMin(e.m)} <span style="color:#9fc0db">${e.h}cm</span>`;
+    wrap.appendChild(d); });
+
+  // 日の出/日の入り・月の出/月の入り
+  const sm=el("sunmoon"); sm.innerHTML="";
+  const parts=[];
+  if(tide.sunrise) parts.push(`🌅 日の出 <b>${tide.sunrise}</b>`);
+  if(tide.sunset)  parts.push(`🌇 日の入り <b>${tide.sunset}</b>`);
+  if(tide.moonrise) parts.push(`🌙 月の出 <b>${String(tide.moonrise).trim()}</b>`);
+  if(tide.moonset)  parts.push(`🌗 月の入り <b>${String(tide.moonset).trim()}</b>`);
+  sm.innerHTML = parts.map(p=>`<span>${p}</span>`).join("");
+
+  el("tide-source").textContent = `出典：tide736.net（気象庁・海上保安庁データに基づく予測）／地名検索：Photon(OSM)・国土地理院`;
+}
+
+/* ===================== フォーム操作 ===================== */
+function addFishRow(name="",size="",count="",photo=""){
+  const row=document.createElement("div"); row.className="fish-item";
+  row.innerHTML=`
+    <button class="photo-btn" title="写真を選ぶ">
+      <span class="ph-content"></span>
+      <button class="rm" title="写真を削除">×</button>
+      <input type="file" accept="image/*" style="display:none;">
+    </button>
+    <div class="fields">
+      <div class="frow">
+        <input class="name" placeholder="魚種" value="${esc(name)}">
+        <input class="size" placeholder="サイズcm" inputmode="decimal" value="${esc(size)}">
+        <input class="cnt"  placeholder="匹" inputmode="numeric" value="${esc(count)}">
+      </div>
+      <div class="exif-hint"></div>
+    </div>
+    <button class="del" title="行を削除">×</button>`;
+  const pbtn=row.querySelector(".photo-btn");
+  const content=row.querySelector(".ph-content");
+  const file=row.querySelector('input[type=file]');
+  const hint=row.querySelector(".exif-hint");
+  function setPhoto(data){
+    pbtn.dataset.photo=data||"";
+    if(data){ pbtn.classList.add("has"); content.innerHTML=`<img src="${data}">`; }
+    else    { pbtn.classList.remove("has"); content.textContent="📷"; hint.className="exif-hint"; hint.innerHTML=""; }
+  }
+  setPhoto(photo);
+  pbtn.onclick=e=>{ if(e.target.classList.contains("rm")) return; file.click(); };
+  file.onchange=async ()=>{
+    if(!file.files[0]){ return; }
+    const orig=file.files[0];
+    // 圧縮はEXIFを消すので、先に元ファイルから撮影日時・GPSを読む
+    hint.className="exif-hint show"; hint.innerHTML=`<span><span class="spinner" style="width:12px;height:12px"></span> 写真情報を読み取り中…</span>`;
+    const meta=await readPhotoExif(orig);
+    try{ setPhoto(await compressImage(orig)); }
+    catch(err){ toast("画像を読み込めませんでした"); file.value=""; hint.className="exif-hint"; return; }
+    await applyPhotoMeta(meta);
+    file.value="";
+  };
+  // 写真のEXIFを“自動反映”。手入力済みの項目は上書きしない（迎合しない＝勝手に消さない）。
+  async function applyPhotoMeta(meta){
+    const msgs=[]; let needTide=false;
+    if(!meta || (!meta.date && meta.lat==null)){
+      hint.className="exif-hint show"; hint.innerHTML=`<span>📷 この写真に撮影日時・位置の情報はありません</span>`; return;
+    }
+    // 撮影日時 → 日付・時間（未入力 or 未編集なら自動セット）
+    if(meta.date && meta.time){
+      if(!userEditedDate){ el("f-date").value=meta.date; }
+      if(!userEditedTime){ el("f-time").value=meta.time; }
+      msgs.push(`🕒 ${meta.date} ${meta.time}`);
+      needTide=true;
+    }
+    // GPS → 場所名（未入力 or 未編集なら自動セット）＋座標から潮汐
+    if(meta.lat!=null && meta.lon!=null){
+      let placeName=await reverseGeocodeName(meta.lat, meta.lon);
+      if(!userEditedLoc){
+        if(placeName) el("f-loc").value=placeName;
+      }
+      msgs.push(`📍 ${placeName||`${meta.lat.toFixed(4)}, ${meta.lon.toFixed(4)}`}`);
+      hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>写真から自動入力しました</span>`;
+      refreshTide({lat:meta.lat, lon:meta.lon}); // 座標から直接 潮汐解決
+      toast("写真から日時・場所を取得しました");
+      return;
+    }
+    // GPSが取れなかった（スマホのギャラリー選択は位置情報を消すことが多い）
+    const noLoc = !el("f-loc").value.trim();
+    const guide = noLoc ? '<br><span style="color:var(--gold)">📍 位置情報が無い写真です。上の「場所」に釣り場名を入力すると潮汐が出ます。</span>' : "";
+    hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}${meta.date?"<br>撮影日時を反映しました":""}${guide}</span>`;
+    if(needTide && !noLoc) refreshTide(); // 場所はあるが座標なし → 既存の場所名で潮汐
+  }
+  row.querySelector(".rm").onclick=()=>setPhoto("");
+  row.querySelector(".del").onclick=()=>row.remove();
+  el("fish-list").appendChild(row);
+}
+function getFish(){
+  const out=[];
+  document.querySelectorAll("#fish-list .fish-item").forEach(r=>{
+    const name=r.querySelector(".name").value.trim();
+    const size=r.querySelector(".size").value.trim();
+    const count=r.querySelector(".cnt").value.trim();
+    const photo=r.querySelector(".photo-btn").dataset.photo||"";
+    if(name||size||count||photo) out.push({name,size,count,photo});
+  });
+  return out;
+}
+// 画像を長辺1024pxに縮小し、JPEG品質0.7で圧縮（容量節約・端末内保存）
+function compressImage(fileOrUrl){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=1024;
+      let{width:w,height:h}=img;
+      if(w>h){ if(w>MAX){ h=Math.round(h*MAX/w); w=MAX; } }
+      else   { if(h>MAX){ w=Math.round(w*MAX/h); h=MAX; } }
+      const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+      cv.getContext("2d").drawImage(img,0,0,w,h);
+      resolve(cv.toDataURL("image/jpeg",0.7));
+      if(img._url) URL.revokeObjectURL(img._url);
+    };
+    img.onerror=()=>reject(new Error("decode error"));
+    if(typeof fileOrUrl==="string"){ img.src=fileOrUrl; }
+    else { const u=URL.createObjectURL(fileOrUrl); img._url=u; img.src=u; }
+  });
+}
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+// JPEGのEXIFから撮影日時とGPS座標を読む（外部ライブラリ不要）。
+// 戻り値: { date,time,raw, lat,lon }（取れた項目のみ）。EXIFが無ければ null
+async function readPhotoExif(file){
+  try{
+    if(!file || !/jpe?g/i.test(file.type||"")) return null;
+    const buf=new DataView(await file.slice(0, 256*1024).arrayBuffer()); // 先頭256KBで十分
+    if(buf.getUint16(0)!==0xFFD8) return null; // JPEGでない
+    let off=2;
+    while(off+4<=buf.byteLength){
+      const marker=buf.getUint16(off);
+      if((marker&0xFF00)!==0xFF00) break;
+      const size=buf.getUint16(off+2);
+      if(marker===0xFFE1){ // APP1(Exif)
+        if(off+10<=buf.byteLength &&
+           buf.getUint8(off+4)===0x45 && buf.getUint8(off+5)===0x78 &&
+           buf.getUint8(off+6)===0x69 && buf.getUint8(off+7)===0x66){ // "Exif"
+          const tiff=off+10;
+          const little=buf.getUint16(tiff)===0x4949;
+          const g16=o=>buf.getUint16(o,little), g32=o=>buf.getUint32(o,little);
+          const rational=o=>{ const num=g32(o), den=g32(o+4); return den?num/den:0; };
+          const readAscii=(valOff,cnt)=>{ let s=""; for(let i=0;i<cnt;i++){ const c=buf.getUint8(valOff+i); if(c===0)break; s+=String.fromCharCode(c);} return s; };
+          const readIFD=ifdOff=>{ const n=g16(ifdOff), res={}; for(let i=0;i<n;i++){ const e=ifdOff+2+i*12; const tag=g16(e),type=g16(e+2),cnt=g32(e+4); let v=e+8; const len=cnt*({1:1,2:1,3:2,4:4,5:8,7:1,9:4,10:8}[type]||1); if(len>4) v=tiff+g32(e+8); res[tag]={cnt,valOff:v}; } return res; };
+          const d0=readIFD(tiff+g32(tiff+4));
+          const out={};
+          // --- 撮影日時 ---
+          let str=null;
+          if(d0[0x8769]){ const de=readIFD(tiff+g32(d0[0x8769].valOff)); // ExifIFD
+            if(de[0x9003]) str=readAscii(de[0x9003].valOff, de[0x9003].cnt);      // DateTimeOriginal
+            else if(de[0x9004]) str=readAscii(de[0x9004].valOff, de[0x9004].cnt); // DateTimeDigitized
+          }
+          if(!str && d0[0x0132]) str=readAscii(d0[0x0132].valOff, d0[0x0132].cnt); // DateTime
+          const m=str && str.match(/^(\d{4}):(\d{2}):(\d{2})\s+(\d{2}):(\d{2})/);
+          if(m){ const dt=new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5]); if(!isNaN(dt)){ out.date=`${m[1]}-${m[2]}-${m[3]}`; out.time=`${m[4]}:${m[5]}`; out.raw=dt; } }
+          // --- GPS座標 ---
+          if(d0[0x8825]){
+            const gp=readIFD(tiff+g32(d0[0x8825].valOff));
+            // 度分秒(3組)・度分(2組)・十進度(1組)のいずれの記録形式にも対応
+            const toDeg=t=>{ const n=Math.min(t.cnt||0,3); let v=0; for(let i=0;i<n;i++) v+=rational(t.valOff+i*8)/Math.pow(60,i); return v; };
+            if(gp[2]&&gp[4]&&gp[2].cnt>=1&&gp[4].cnt>=1){
+              const latRef=gp[1]?readAscii(gp[1].valOff,gp[1].cnt):"N";
+              const lonRef=gp[3]?readAscii(gp[3].valOff,gp[3].cnt):"E";
+              let lat=toDeg(gp[2]), lon=toDeg(gp[4]);
+              if(/S/i.test(latRef)) lat=-lat;
+              if(/W/i.test(lonRef)) lon=-lon;
+              if(isFinite(lat)&&isFinite(lon)&&(lat||lon)){ out.lat=lat; out.lon=lon; }
+            }
+          }
+          return (out.date||out.lat!=null)? out : null;
+        }
+      }
+      off+=2+size;
+    }
+  }catch(e){}
+  return null;
+}
+// 座標 → 釣り場らしい地名（Photon reverse, CORS対応, キャッシュあり）
+async function reverseGeocodeName(lat, lon){
+  const ck=`revname:${lat.toFixed(4)},${lon.toFixed(4)}`;
+  const c=localStorage.getItem(ck); if(c) return c;
+  try{
+    const j=JSON.parse(await fetchText(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=default`));
+    const p=j.features && j.features[0] && j.features[0].properties;
+    if(!p) return null;
+    // 公園・港・施設などの固有名(name)を最優先。無ければ「市区町村＋地区」で釣り場が分かる形に。
+    let name=null;
+    if(p.name && p.osm_value!=="restaurant" && p.osm_value!=="cafe" && p.osm_value!=="shop"){
+      name=p.name;
+    }else{
+      name=[p.city, p.district].filter(Boolean).join(" ") || p.name || p.street || p.county || null;
+    }
+    if(name){ try{ localStorage.setItem(ck,name); }catch(e){} }
+    return name;
+  }catch(e){ return null; }
+}
+
+function resetForm(){
+  const now=new Date();
+  el("f-date").value=now.toISOString().slice(0,10);
+  el("f-time").value=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+  el("f-loc").value="";
+  el("f-tackle").value="";
+  el("f-memo").value="";
+  el("fish-list").innerHTML=""; addFishRow();
+  userEditedDate=false; userEditedTime=false; userEditedLoc=false; // 写真の自動反映を再び許可
+  editingId=null; editingCreatedAt=null; setEditingUI(false); // 編集モード解除
+  refreshTide();
+}
+
+async function saveTrip(){
+  const dateStr=el("f-date").value;
+  if(!dateStr){ toast("日付を入力してください"); return; }
+  const loc=el("f-loc").value.trim();
+  const fish=getFish();
+  // フォーム上の写真はdataURL。DBへはBlobで保存（容量効率のため）。
+  for(const f of fish){
+    if(typeof f.photo==="string" && f.photo.startsWith("data:")){
+      try{ f.photo=await dataURLtoBlob(f.photo); }catch(e){ f.photo=null; }
+    } else if(!f.photo){ f.photo=null; }
+  }
+  const editing = !!editingId;
+  const rec={
+    id: editing ? editingId : (Date.now().toString(36)+Math.random().toString(36).slice(2,6)),
+    date: dateStr,
+    time: el("f-time").value,
+    loc,
+    pc: currentPort ? currentPort.pc : null, hc: currentPort ? currentPort.hc : null,
+    tide: currentTide && currentTide.date===dateStr ? currentTide : null, // 潮汐スナップショット
+    tideType: currentTide ? currentTide.tideType : "",
+    moonAge: currentTide ? currentTide.moonAge : null,
+    fish,
+    tackle: el("f-tackle").value.trim(),
+    memo: el("f-memo").value.trim(),
+    createdAt: editing ? (editingCreatedAt||Date.now()) : Date.now() // 並び順を保つため作成日時は維持
+  };
+  try{
+    await dbPutRecord(rec); // 同じidなら上書き（=編集）、新idなら追加
+  }catch(err){
+    alert("保存に失敗しました（"+(err&&err.name||"")+"）。\n端末の空き容量が不足している可能性があります。設定タブから書き出しでバックアップのうえ、不要な記録を削除してください。");
+    return;
+  }
+  if(loc){ const ls=loadLocs(); if(!ls.includes(loc)){ ls.unshift(loc); saveLocs(ls.slice(0,20)); buildLocUI(); } }
+  toast(editing ? "変更を保存しました ✏️" : "保存しました 🎣");
+  resetForm();
+  await renderHistory();
+  switchView("history");
+}
+
+/* ===================== 履歴 ===================== */
+let _photoURLs=[]; // 表示中の写真ObjectURL（再描画時に破棄してリーク防止）
+function revokePhotoURLs(){ _photoURLs.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(e){} }); _photoURLs=[]; }
+function photoURL(p){ // BlobならObjectURL、文字列(dataURL)ならそのまま
+  if(!p) return "";
+  if(typeof p==="string") return p;
+  const u=URL.createObjectURL(p); _photoURLs.push(u); return u;
+}
+
+async function renderHistory(){
+  const recs=await dbGetAllRecords();
+  const list=el("rec-list");
+  revokePhotoURLs();
+  let fishCnt=0; const species=new Set();
+  recs.forEach(r=>(r.fish||[]).forEach(f=>{ fishCnt+=parseInt(f.count)||(f.name?1:0); if(f.name)species.add(f.name); }));
+  el("st-trips").textContent=recs.length;
+  el("st-fish").textContent=fishCnt;
+  el("st-species").textContent=species.size;
+
+  if(!recs.length){ list.innerHTML=`<div class="empty">まだ釣行記録がありません。<br>「記録」タブから最初の一匹を記録しましょう！🎣</div>`; return; }
+  list.innerHTML="";
+  recs.forEach(r=>{
+    const div=document.createElement("div"); div.className="rec";
+    const fishHtml=r.fish.length
+      ? r.fish.map(f=>{ const u=photoURL(f.photo); return `<div class="fishline"><span class="fname">${esc(f.name||"魚")}</span>${f.size?` ${esc(f.size)}cm`:""}${f.count?` ×${esc(f.count)}`:""}${u?`<div class="fish-photos"><img src="${u}" class="zoom" alt="釣果写真"></div>`:""}</div>`; }).join("")
+      : `<div class="fishline" style="color:#9fc0db">釣果なし（ボウズ）</div>`;
+    const tideInfo = r.tide ? `<div class="kv"><b>潮汐:</b> ${esc(r.tide.harborName||"")}${r.tide.sunrise?` ／ 🌅${esc(r.tide.sunrise)} 🌇${esc(r.tide.sunset||"")}`:""}</div>` : "";
+    div.innerHTML=`
+      <div class="top">
+        <div>
+          <div class="dt">${esc(r.date)} ${esc(r.time||"")}</div>
+          <div class="loc">📍 ${esc(r.loc||"場所未記入")}</div>
+        </div>
+        <span class="${badgeClass(r.tideType)}">${esc(r.tideType||"—")}</span>
+      </div>
+      ${r.tide&&r.tide.points&&r.tide.points.length?`<canvas class="mini-canvas" height="120"></canvas>`:""}
+      ${fishHtml}
+      ${tideInfo}
+      ${r.tackle?`<div class="kv"><b>タックル:</b> ${esc(r.tackle).replace(/\n/g,"、")}</div>`:""}
+      ${r.memo?`<div class="kv"><b>メモ:</b> ${esc(r.memo).replace(/\n/g,"<br>")}</div>`:""}
+      <div class="acts">
+        <button class="btn ghost sm edit" style="flex:1">✏️ 編集</button>
+        <button class="btn ghost sm dup" style="flex:1">複製して記録</button>
+        <button class="btn ghost sm del" style="flex:0 0 auto; color:var(--danger); border-color:var(--danger);">削除</button>
+      </div>`;
+    list.appendChild(div);
+    if(r.tide&&r.tide.points&&r.tide.points.length){
+      const mc=div.querySelector(".mini-canvas");
+      drawTide(mc, r.tide, r.time? parseHM(r.time): null);
+    }
+    div.querySelectorAll(".zoom").forEach(im=>im.onclick=()=>openLightbox(im.src));
+    div.querySelector(".del").onclick=async ()=>{ if(confirm("この記録を削除しますか？")){ await dbDeleteRecord(r.id); await renderHistory(); toast("削除しました"); } };
+    div.querySelector(".edit").onclick=()=>startEdit(r);
+    div.querySelector(".dup").onclick=()=>{
+      el("f-date").value=new Date().toISOString().slice(0,10);
+      el("f-loc").value=r.loc||""; el("f-tackle").value=r.tackle||"";
+      userEditedLoc=!!r.loc; userEditedDate=false; userEditedTime=false; // 引き継いだ場所は尊重
+      el("fish-list").innerHTML=""; (r.fish.length?r.fish:[{}]).forEach(f=>addFishRow(f.name,f.size,f.count)); // 写真は引き継がない
+      switchView("log"); refreshTide(); toast("場所・タックルを引き継ぎました");
+    };
+  });
+}
+
+// 既存記録をフォームに読み込んで編集モードに入る
+async function startEdit(r){
+  editingId=r.id; editingCreatedAt=r.createdAt;
+  el("f-date").value=r.date||"";
+  el("f-time").value=r.time||"";
+  el("f-loc").value=r.loc||"";
+  el("f-tackle").value=r.tackle||"";
+  el("f-memo").value=r.memo||"";
+  // 手入力済み扱い（写真の自動反映で勝手に上書きしない）
+  userEditedDate=true; userEditedTime=true; userEditedLoc=!!r.loc;
+  // 魚の行（写真Blobはフォーム用にdataURLへ）
+  el("fish-list").innerHTML="";
+  const fishArr = r.fish && r.fish.length ? r.fish : [{}];
+  for(const f of fishArr){
+    let photoData="";
+    if(f.photo){ photoData = (typeof f.photo==="string") ? f.photo : await blobToDataURL(f.photo); }
+    addFishRow(f.name||"", f.size||"", f.count||"", photoData);
+  }
+  // 保存済みの潮汐スナップショットがあれば復元（無ければ場所から取り直す）
+  if(r.tide){ currentTide=r.tide; currentPort={pc:r.pc,hc:r.hc,name:r.tide.harborName}; renderTide(r.tide); }
+  else { currentTide=null; currentPort=null; }
+  setEditingUI(true);
+  switchView("log");
+  if(!r.tide) refreshTide();
+  window.scrollTo(0,0);
+  toast("編集モードにしました");
+}
+function setEditingUI(on){
+  el("edit-banner").style.display = on ? "flex" : "none";
+  el("save-btn").textContent = on ? "変更を保存する" : "この釣行を保存する";
+}
+function cancelEdit(){ resetForm(); switchView("history"); toast("編集をやめました"); }
+
+/* ===================== タブ切替 ===================== */
+function switchView(name){
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("on"));
+  el("view-"+name).classList.add("on");
+  document.querySelectorAll(".tabbar button").forEach(b=>b.classList.toggle("on", b.dataset.view===name));
+  if(name==="history") renderHistory();
+  window.scrollTo(0,0);
+}
+
+/* ===================== UI部品 ===================== */
+function buildLocUI(){
+  const locs=loadLocs();
+  el("loc-list").innerHTML=locs.map(l=>`<option value="${esc(l)}">`).join("");
+  const chips=el("loc-chips"); chips.innerHTML="";
+  locs.slice(0,6).forEach(l=>{ const c=document.createElement("span"); c.className="chip"; c.textContent=l; c.onclick=()=>{el("f-loc").value=l; userEditedLoc=true; refreshTide();}; chips.appendChild(c); });
+}
+function buildTackleChips(){
+  const chips=el("tackle-chips"); chips.innerHTML="";
+  COMMON_TACKLE.forEach(t=>{ const c=document.createElement("span"); c.className="chip"; c.textContent="+ "+t;
+    c.onclick=()=>{ const ta=el("f-tackle"); ta.value=ta.value? ta.value.replace(/\s*$/,"")+"\n"+t : t; }; chips.appendChild(c); });
+}
+let toastTimer;
+function toast(msg){ const t=el("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),1800); }
+function openLightbox(src){ el("lightbox-img").src=src; el("lightbox").classList.add("on"); }
+function closeLightbox(){ el("lightbox").classList.remove("on"); el("lightbox-img").src=""; }
+
+/* ===================== バックアップ ===================== */
+// 書き出し：DBのBlob写真をdataURLに変換してJSON化（従来フォーマット互換）
+async function exportData(){
+  const recs=await dbGetAllRecords();
+  const out=[];
+  for(const r of recs){
+    const rec=Object.assign({}, r);
+    rec.fish=[];
+    for(const f of (r.fish||[])){
+      const nf=Object.assign({}, f);
+      if(f.photo && typeof f.photo!=="string"){
+        try{ nf.photo=await blobToDataURL(f.photo); }catch(e){ nf.photo=""; }
+      }
+      rec.fish.push(nf);
+    }
+    out.push(rec);
+  }
+  const data={records:out, locations:loadLocs(), exportedAt:new Date().toISOString()};
+  const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=`釣果ノート_${new Date().toISOString().slice(0,10)}.json`; a.click();
+  URL.revokeObjectURL(url); toast("書き出しました");
+}
+function importData(file){
+  const reader=new FileReader();
+  reader.onload=async ()=>{
+    try{
+      const d=JSON.parse(reader.result);
+      if(!d.records) throw new Error("形式が不正です");
+      if(confirm(`${d.records.length}件の記録を読み込みます。現在のデータに追加しますか？`)){
+        const existing=await dbGetAllRecords();
+        const ids=new Set(existing.map(r=>r.id));
+        for(const r of d.records){
+          if(ids.has(r.id)) continue;
+          for(const f of (r.fish||[])){
+            if(typeof f.photo==="string" && f.photo.startsWith("data:")){
+              try{ f.photo=await dataURLtoBlob(f.photo); }catch(e){ f.photo=null; }
+            }
+          }
+          await dbPutRecord(r);
+        }
+        if(d.locations) saveLocs(Array.from(new Set([...d.locations,...loadLocs()])).slice(0,20));
+        buildLocUI(); await renderHistory(); toast("読み込みました");
+      }
+    }catch(e){ alert("読み込みに失敗しました: "+e.message); }
+  };
+  reader.readAsText(file);
+}
+
+/* ===================== 初期化 ===================== */
+async function init(){
+  buildLocUI();
+  buildTackleChips();
+  try{ await migrateFromLocalStorage(); }catch(e){ console.warn("移行スキップ", e); }
+
+  const now=new Date();
+  el("f-date").value=now.toISOString().slice(0,10);
+  el("f-time").value=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+  el("fish-list").innerHTML=""; addFishRow();
+
+  // ユーザーが手で触った欄は写真の自動反映で上書きしない
+  el("f-date").addEventListener("input", ()=>{ userEditedDate=true; });
+  el("f-time").addEventListener("input", ()=>{ userEditedTime=true; });
+  el("f-loc").addEventListener("input", ()=>{ userEditedLoc=true; });
+  el("f-date").addEventListener("change", refreshTide);
+  el("f-time").addEventListener("change", ()=>{ if(currentTide){ drawTide(el("tide-canvas"), currentTide, markFromTime()); } });
+  el("f-loc").addEventListener("change", refreshTide); // 場所確定（blur/Enter）で潮汐を自動取得
+  el("add-fish").onclick=()=>addFishRow();
+  el("save-btn").onclick=saveTrip;
+  el("reset-btn").onclick=()=>{ resetForm(); toast("クリアしました"); };
+  el("cancel-edit").onclick=cancelEdit;
+  el("export-btn").onclick=exportData;
+  el("import-file").onchange=e=>{ if(e.target.files[0]) importData(e.target.files[0]); e.target.value=""; };
+  el("clear-btn").onclick=async ()=>{ if(confirm("本当にすべての釣行記録を削除しますか？この操作は元に戻せません。")){ await dbClearRecords(); await renderHistory(); toast("全データを削除しました"); } };
+  document.querySelectorAll(".tabbar button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
+  el("lightbox").onclick=closeLightbox;
+  window.addEventListener("resize", ()=>{ if(currentTide && el("view-log").classList.contains("on")) drawTide(el("tide-canvas"), currentTide, markFromTime()); });
+
+  refreshTide(); // 起動時は場所未入力 → 案内表示
+}
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
