@@ -566,6 +566,8 @@ let currentPort=null;       // {pc,hc,name} 自動解決した基準港
 let tideReqToken=0;         // 競合する非同期リクエストの打ち消し用
 // ユーザーが手で編集したか（写真の自動反映で上書きしないため）
 let userEditedDate=false, userEditedTime=false, userEditedLoc=false;
+// 写真から日時/場所を一度確定したか（2枚目以降の写真では上書きしない＝最初の1枚でFIX）
+let photoDateLocked=false, photoLocLocked=false;
 // 既存記録の編集中フラグ（null=新規作成）
 let editingId=null, editingCreatedAt=null;
 
@@ -732,36 +734,45 @@ function addFishRow(name="",size="",count="",photo=""){
   }
   file.onchange=()=>handleFile(file);
   file2.onchange=()=>handleFile(file2);
-  // 写真のEXIFを“自動反映”。手入力済みの項目は上書きしない（迎合しない＝勝手に消さない）。
+  // 写真のEXIFを“自動反映”。日時・場所は【最初の1枚でFIX】（2枚目以降の写真では上書きしない）。
+  // 手入力した項目も上書きしない（迎合しない＝勝手に消さない）。
   async function applyPhotoMeta(meta){
-    const msgs=[]; let needTide=false;
+    const msgs=[];
     if(!meta || (!meta.date && meta.lat==null)){
       hint.className="exif-hint show"; hint.innerHTML=`<span>📷 この写真に撮影日時・位置の情報はありません</span>`; return;
     }
-    // 撮影日時 → 日付・時間（未入力 or 未編集なら自動セット）
+    // --- 撮影日時 → 日付・時間 ---
     if(meta.date && meta.time){
-      if(!userEditedDate){ el("f-date").value=meta.date; }
-      if(!userEditedTime){ el("f-time").value=meta.time; }
-      msgs.push(`🕒 ${meta.date} ${meta.time}`);
-      needTide=true;
-    }
-    // GPS → 場所名（未入力 or 未編集なら自動セット）＋座標から潮汐
-    if(meta.lat!=null && meta.lon!=null){
-      let placeName=await reverseGeocodeName(meta.lat, meta.lon);
-      if(!userEditedLoc){
-        if(placeName) el("f-loc").value=placeName;
+      const lockedDate = userEditedDate || photoDateLocked;
+      if(!lockedDate){
+        el("f-date").value=meta.date; el("f-time").value=meta.time;
+        photoDateLocked=true;            // 最初の写真の日時で確定
       }
+      msgs.push(`🕒 ${meta.date} ${meta.time}`+(lockedDate?"（記録の日時は最初の写真で確定）":""));
+    }
+    // --- GPS → 場所名＋潮汐 ---
+    if(meta.lat!=null && meta.lon!=null){
+      const lockedLoc = userEditedLoc || photoLocLocked;
+      if(lockedLoc){
+        // 既に場所が確定済み → 上書きも潮汐再取得もしない
+        msgs.push(`📍 ${meta.lat.toFixed(4)}, ${meta.lon.toFixed(4)}（場所は最初の写真で確定）`);
+        hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>写真を追加しました</span>`;
+        return;
+      }
+      let placeName=await reverseGeocodeName(meta.lat, meta.lon);
+      if(placeName) el("f-loc").value=placeName;
+      photoLocLocked=true;               // 最初の写真の場所で確定
       msgs.push(`📍 ${placeName||`${meta.lat.toFixed(4)}, ${meta.lon.toFixed(4)}`}`);
       hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>写真から自動入力しました</span>`;
       refreshTide({lat:meta.lat, lon:meta.lon}); // 座標から直接 潮汐解決
       toast("写真から日時・場所を取得しました");
       return;
     }
-    // GPSが取れなかった（スマホのギャラリー選択は位置情報を消すことが多い）
+    // --- GPSなし（スマホのギャラリー選択は位置情報を消すことが多い）---
     const noLoc = !el("f-loc").value.trim();
     const guide = noLoc ? '<br><span style="color:var(--gold)">📍 位置情報が無い写真です。上の「場所」に釣り場名を入力すると潮汐が出ます。</span>' : "";
     hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}${meta.date?"<br>撮影日時を反映しました":""}${guide}</span>`;
-    if(needTide && !noLoc) refreshTide(); // 場所はあるが座標なし → 既存の場所名で潮汐
+    if(meta.date && !noLoc && !photoLocLocked) refreshTide(); // 場所はあるが座標なし → 既存の場所名で潮汐
   }
   row.querySelector(".rm").onclick=()=>setPhoto("");
   row.querySelector(".del").onclick=()=>row.remove();
@@ -911,6 +922,7 @@ function resetForm(){
   el("f-memo").value="";
   el("fish-list").innerHTML=""; addFishRow();
   userEditedDate=false; userEditedTime=false; userEditedLoc=false; // 写真の自動反映を再び許可
+  photoDateLocked=false; photoLocLocked=false; // 写真FIXを解除（新しい釣行）
   editingId=null; editingCreatedAt=null; setEditingUI(false); // 編集モード解除
   refreshTide();
 }
@@ -1027,6 +1039,7 @@ async function startEdit(r){
   el("f-memo").value=r.memo||"";
   // 手入力済み扱い（写真の自動反映で勝手に上書きしない）
   userEditedDate=true; userEditedTime=true; userEditedLoc=!!r.loc;
+  photoDateLocked=true; photoLocLocked=!!r.loc; // 既存記録：写真追加で日時・場所を変えない
   // 魚の行（写真Blobはフォーム用にdataURLへ）
   el("fish-list").innerHTML="";
   const fishArr = r.fish && r.fish.length ? r.fish : [{}];
