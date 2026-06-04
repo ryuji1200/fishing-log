@@ -505,7 +505,8 @@ async function getTide(pc, hc, dateStr){
 }
 
 /* ===================== 描画 ===================== */
-function drawTide(canvas, tide, markMin){
+// fishMarks: [{m:分, label:魚名}] … 各魚の釣れた時刻を🐟マークで表示
+function drawTide(canvas, tide, markMin, fishMarks){
   const pts=tide.points;
   if(!pts||!pts.length) return;
   const dpr=window.devicePixelRatio||1;
@@ -554,6 +555,22 @@ function drawTide(canvas, tide, markMin){
     ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+H); ctx.stroke(); ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(x,y,4.5,0,Math.PI*2); ctx.fillStyle="#ffd166"; ctx.fill();
     ctx.strokeStyle="#04263b"; ctx.lineWidth=1.5; ctx.stroke();
+  }
+
+  // 各魚の釣れた時刻マーク（🐟）
+  if(fishMarks && fishMarks.length){
+    ctx.font="13px sans-serif"; ctx.textAlign="center";
+    for(const fm of fishMarks){
+      if(fm.m==null || fm.m<0 || fm.m>1440) continue;
+      const x=X(fm.m), y=Y(hAt(fm.m));
+      // 曲線上の位置に縦線
+      ctx.strokeStyle="rgba(255,209,102,.55)"; ctx.lineWidth=1; ctx.setLineDash([2,3]);
+      ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,padT+H); ctx.stroke(); ctx.setLineDash([]);
+      // 曲線上に点
+      ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fillStyle="#ffd166"; ctx.fill();
+      // 🐟アイコン（曲線の少し上）
+      ctx.fillText("🐟", x, Math.max(padT+10, y-7));
+    }
   }
 }
 
@@ -653,9 +670,10 @@ async function refreshTide(coords){
 }
 
 function renderTide(tide){
+  const _fishMarks = (typeof collectFishMarks==="function") ? collectFishMarks() : [];
   el("tide-status").style.display="none";
   const cv=el("tide-canvas"); cv.style.display="block";
-  drawTide(cv, tide, markFromTime());
+  drawTide(cv, tide, markFromTime(), _fishMarks);
 
   el("tide-type").textContent = tide.tideType||"—";
   el("moon-info").textContent = tide.moonAge!=null ? `🌙 月齢 ${tide.moonAge.toFixed(1)}` : "";
@@ -685,13 +703,14 @@ function renderTide(tide){
 }
 
 /* ===================== フォーム操作 ===================== */
-function addFishRow(name="",size="",count="",photo=""){
+function addFishRow(name="",size="",count="",photo="",tmin=null){
   const row=document.createElement("div"); row.className="fish-item";
+  if(tmin!=null) row.dataset.tmin=tmin;
   row.innerHTML=`
     <button class="photo-btn" title="写真を選ぶ">
       <span class="ph-content"></span>
       <button class="rm" title="写真を削除">×</button>
-      <input type="file" accept="image/*" style="display:none;">
+      <input type="file" style="display:none;">
     </button>
     <div class="fields">
       <div class="frow">
@@ -700,14 +719,11 @@ function addFishRow(name="",size="",count="",photo=""){
         <input class="cnt"  placeholder="匹" inputmode="numeric" value="${esc(count)}">
       </div>
       <div class="exif-hint"></div>
-      <button type="button" class="file-pick">📁 ファイルアプリから選ぶ（位置情報を残す）</button>
-      <input type="file" class="file-input2" style="display:none;">
     </div>
     <button class="del" title="行を削除">×</button>`;
   const pbtn=row.querySelector(".photo-btn");
   const content=row.querySelector(".ph-content");
-  const file=row.querySelector('.photo-btn input[type=file]');
-  const file2=row.querySelector('.file-input2');
+  const file=row.querySelector('.photo-btn input[type=file]'); // accept指定なし＝ファイルアプリ経由を選びやすく（位置情報を残す）
   const hint=row.querySelector(".exif-hint");
   function setPhoto(data){
     pbtn.dataset.photo=data||"";
@@ -716,7 +732,6 @@ function addFishRow(name="",size="",count="",photo=""){
   }
   setPhoto(photo);
   pbtn.onclick=e=>{ if(e.target.classList.contains("rm")) return; file.click(); };
-  row.querySelector(".file-pick").onclick=()=>file2.click();
   // 写真ファイルを処理（撮影日時・GPSを読み、圧縮して保存）
   async function handleFile(inputEl){
     if(!inputEl.files[0]){ return; }
@@ -729,11 +744,10 @@ function addFishRow(name="",size="",count="",photo=""){
     const meta=await readPhotoExif(orig);
     try{ setPhoto(await compressImage(orig)); }
     catch(err){ toast("画像を読み込めませんでした"); inputEl.value=""; hint.className="exif-hint"; return; }
-    await applyPhotoMeta(meta);
+    await applyPhotoMeta(meta, hint);
     inputEl.value="";
   }
   file.onchange=()=>handleFile(file);
-  file2.onchange=()=>handleFile(file2);
   // 写真のEXIFを“自動反映”。日時・場所は【最初の1枚でFIX】（2枚目以降の写真では上書きしない）。
   // 手入力した項目も上書きしない（迎合しない＝勝手に消さない）。
   async function applyPhotoMeta(meta){
@@ -741,30 +755,30 @@ function addFishRow(name="",size="",count="",photo=""){
     if(!meta || (!meta.date && meta.lat==null)){
       hint.className="exif-hint show"; hint.innerHTML=`<span>📷 この写真に撮影日時・位置の情報はありません</span>`; return;
     }
-    // --- 撮影日時 → 日付・時間 ---
+    // --- 撮影日時 → この魚の釣れた時刻（行に保持）＋記録の日付/時間（最初の1枚でFIX）---
     if(meta.date && meta.time){
+      row.dataset.tmin = parseHM(meta.time);   // この魚の釣れた時刻（潮汐グラフのマーク用）
       const lockedDate = userEditedDate || photoDateLocked;
       if(!lockedDate){
         el("f-date").value=meta.date; el("f-time").value=meta.time;
-        photoDateLocked=true;            // 最初の写真の日時で確定
+        photoDateLocked=true;
       }
-      msgs.push(`🕒 ${meta.date} ${meta.time}`+(lockedDate?"（記録の日時は最初の写真で確定）":""));
+      msgs.push(`🕒 ${meta.date} ${meta.time}`);
+      redrawTideMarks();                       // 釣れた時刻のマークを更新
     }
-    // --- GPS → 場所名＋潮汐 ---
+    // --- GPS → 場所名＋潮汐（最初の1枚でFIX）---
     if(meta.lat!=null && meta.lon!=null){
       const lockedLoc = userEditedLoc || photoLocLocked;
       if(lockedLoc){
-        // 既に場所が確定済み → 上書きも潮汐再取得もしない
-        msgs.push(`📍 ${meta.lat.toFixed(4)}, ${meta.lon.toFixed(4)}（場所は最初の写真で確定）`);
         hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>写真を追加しました</span>`;
         return;
       }
       let placeName=await reverseGeocodeName(meta.lat, meta.lon);
       if(placeName) el("f-loc").value=placeName;
-      photoLocLocked=true;               // 最初の写真の場所で確定
+      photoLocLocked=true;
       msgs.push(`📍 ${placeName||`${meta.lat.toFixed(4)}, ${meta.lon.toFixed(4)}`}`);
       hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>写真から自動入力しました</span>`;
-      refreshTide({lat:meta.lat, lon:meta.lon}); // 座標から直接 潮汐解決
+      refreshTide({lat:meta.lat, lon:meta.lon}); // 座標から直接 潮汐解決（描画後にマークも反映）
       toast("写真から日時・場所を取得しました");
       return;
     }
@@ -774,9 +788,26 @@ function addFishRow(name="",size="",count="",photo=""){
     hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}${meta.date?"<br>撮影日時を反映しました":""}${guide}</span>`;
     if(meta.date && !noLoc && !photoLocLocked) refreshTide(); // 場所はあるが座標なし → 既存の場所名で潮汐
   }
-  row.querySelector(".rm").onclick=()=>setPhoto("");
-  row.querySelector(".del").onclick=()=>row.remove();
+  row.querySelector(".rm").onclick=()=>{ setPhoto(""); delete row.dataset.tmin; redrawTideMarks(); };
+  row.querySelector(".del").onclick=()=>{ row.remove(); redrawTideMarks(); };
   el("fish-list").appendChild(row);
+}
+// フォーム内の全魚の「釣れた時刻」を集める（分単位）
+function collectFishMarks(){
+  const marks=[];
+  document.querySelectorAll("#fish-list .fish-item").forEach(r=>{
+    if(r.dataset.tmin!=null && r.dataset.tmin!==""){
+      const m=parseInt(r.dataset.tmin,10);
+      if(!isNaN(m)){ const nm=(r.querySelector(".name").value||"").trim(); marks.push({m, label:nm}); }
+    }
+  });
+  return marks;
+}
+// 記録タブの潮汐グラフを、各魚の釣れた時刻マーク付きで再描画
+function redrawTideMarks(){
+  if(currentTide && el("view-log").classList.contains("on")){
+    drawTide(el("tide-canvas"), currentTide, markFromTime(), collectFishMarks());
+  }
 }
 function getFish(){
   const out=[];
@@ -785,7 +816,8 @@ function getFish(){
     const size=r.querySelector(".size").value.trim();
     const count=r.querySelector(".cnt").value.trim();
     const photo=r.querySelector(".photo-btn").dataset.photo||"";
-    if(name||size||count||photo) out.push({name,size,count,photo});
+    const tmin=(r.dataset.tmin!=null&&r.dataset.tmin!=="")?parseInt(r.dataset.tmin,10):null; // 釣れた時刻(分)
+    if(name||size||count||photo) out.push({name,size,count,photo,t:tmin});
   });
   return out;
 }
@@ -1014,7 +1046,8 @@ async function renderHistory(){
     list.appendChild(div);
     if(r.tide&&r.tide.points&&r.tide.points.length){
       const mc=div.querySelector(".mini-canvas");
-      drawTide(mc, r.tide, r.time? parseHM(r.time): null);
+      const histMarks=(r.fish||[]).filter(f=>f.t!=null).map(f=>({m:f.t, label:f.name||""}));
+      drawTide(mc, r.tide, r.time? parseHM(r.time): null, histMarks);
     }
     div.querySelectorAll(".zoom").forEach(im=>im.onclick=()=>openLightbox(im.src));
     div.querySelector(".del").onclick=async ()=>{ if(confirm("この記録を削除しますか？")){ await dbDeleteRecord(r.id); await renderHistory(); toast("削除しました"); } };
@@ -1046,7 +1079,7 @@ async function startEdit(r){
   for(const f of fishArr){
     let photoData="";
     if(f.photo){ photoData = (typeof f.photo==="string") ? f.photo : await blobToDataURL(f.photo); }
-    addFishRow(f.name||"", f.size||"", f.count||"", photoData);
+    addFishRow(f.name||"", f.size||"", f.count||"", photoData, f.t!=null?f.t:null);
   }
   // 保存済みの潮汐スナップショットがあれば復元（無ければ場所から取り直す）
   if(r.tide){ currentTide=r.tide; currentPort={pc:r.pc,hc:r.hc,name:r.tide.harborName}; renderTide(r.tide); }
