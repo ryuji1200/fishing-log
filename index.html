@@ -362,37 +362,51 @@ const HARBOR_CACHE_PREFIX = "harbor-cache:";
 
 function parseHM(t){ const p=String(t).trim().split(":"); return (+p[0])*60 + (+p[1]); }
 
-// タイムアウト付きfetch（死んだ経路で固まらないように）
+// タイムアウト付きfetch（死んだ経路で固まらないように）。タイムアウト時は分かりやすいエラーに。
 function fetchWithTimeout(url, ms){
   const ctrl = new AbortController();
-  const timer = setTimeout(()=>ctrl.abort(), ms);
-  return fetch(url, {signal:ctrl.signal}).finally(()=>clearTimeout(timer));
+  let timedOut=false;
+  const timer = setTimeout(()=>{ timedOut=true; ctrl.abort(); }, ms);
+  return fetch(url, {signal:ctrl.signal})
+    .catch(e=>{ throw timedOut ? new Error("通信タイムアウト") : e; })
+    .finally(()=>clearTimeout(timer));
 }
 
 // 直接呼べるAPI（Photon・国土地理院はCORS対応）用。プロキシは挟まない。
 async function fetchText(url, opts){
   opts = opts || {};
-  const r = await fetchWithTimeout(url, opts.timeout || 8000);
+  const r = await fetchWithTimeout(url, opts.timeout || 7000);
   if(!r.ok) throw new Error("HTTP "+r.status);
   return await r.text();
 }
 
-// tide736.net はブラウザから直接呼べない(CORS非対応)ので、公開プロキシ経由で取得する。
-// 直接アクセスは「試すだけ無駄でタイムアウトの原因」になるため最初から行わない。
+// tide736.net はブラウザから直接呼べない(CORS非対応)。
+// 本番(Netlify公開)では自前のサーバー関数 /api/tide で中継する（プロキシ依存なし・安定）。
+// それが使えない場合（ローカルfile://等）のみ公開プロキシにフォールバック。
 const TIDE_PROXIES = [
   u => "https://cors.eu.org/" + u,
   u => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u),
   u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
 ];
-async function fetchTide(url){
+// p = {pc,hc,yr,mn,dy,rg}
+async function fetchTide(p){
+  const qs=`pc=${p.pc}&hc=${p.hc}&yr=${p.yr}&mn=${p.mn}&dy=${p.dy}&rg=${p.rg||"day"}`;
+  const tideURL=`https://tide736.net/api/get_tide.php?${qs}`;
+  // 1) 自前のNetlify Function（http/httpsで配信されている時のみ。file://では不可）
+  if(location.protocol==="http:"||location.protocol==="https:"){
+    try{
+      const r=await fetchWithTimeout(`/api/tide?${qs}`, 9000);
+      if(r.ok){ const t=await r.text(); if(t && t.indexOf('"status"')>=0) return t; }
+    }catch(e){ /* フォールバックへ */ }
+  }
+  // 2) 公開プロキシ（中継関数が無い/失敗した場合）
   let lastErr;
   for(const wrap of TIDE_PROXIES){
     try{
-      const r = await fetchWithTimeout(wrap(url), 8000);
+      const r = await fetchWithTimeout(wrap(tideURL), 6000);
       if(r.ok){
         const t = await r.text();
-        // プロキシが返すエラーページ("error code: 520"等)を成功と誤認しない
-        if(t && !/^error code:\s*\d+/i.test(t.trim())) return t;
+        if(t && !/^error code:\s*\d+/i.test(t.trim()) && t.indexOf('"status"')>=0) return t;
       }
       lastErr = new Error("HTTP "+r.status);
     }catch(e){ lastErr = e; }
@@ -406,8 +420,7 @@ async function getHarbors(pc){
   const c = localStorage.getItem(ck);
   if(c){ try{ return JSON.parse(c); }catch(e){} }
   const now=new Date();
-  const url=`https://tide736.net/api/get_tide.php?pc=${pc}&hc=1&yr=${now.getFullYear()}&mn=${now.getMonth()+1}&dy=${now.getDate()}&rg=day`;
-  const j=JSON.parse(await fetchTide(url));
+  const j=JSON.parse(await fetchTide({pc, hc:1, yr:now.getFullYear(), mn:now.getMonth()+1, dy:now.getDate()}));
   const list=(j.tide&&j.tide.link)? j.tide.link.map(h=>({hc:h.harbor_code, name:h.harbor_namej, lat:+h.latitude, lon:+h.longitude})) : [];
   if(list.length) localStorage.setItem(ck, JSON.stringify(list));
   return list;
@@ -431,37 +444,49 @@ function haversine(a1,o1,a2,o2){
   const s=Math.sin(dLat/2)**2 + Math.cos(a1*toR)*Math.cos(a2*toR)*Math.sin(dLon/2)**2;
   return 2*R*Math.asin(Math.sqrt(s));
 }
-// 地名 → {lat, lon, pc(都道府県コード)}
-//  1) Photon(komoot/OSM)で地名→緯度経度（POI名にも強い・CORS対応）
-//  2) 国土地理院の逆ジオで緯度経度→市区町村コード→都道府県コード（CORS対応）
-// どちらも直接呼べる（プロキシ不要）。結果はキャッシュ。
+const GEO_BIAS_LAT=35.55, GEO_BIAS_LON=139.85, GEO_NEAR_KM=200;
+// 候補群（[{lat,lon,label}]）から東京湾バイアスで最寄りを選ぶ。全候補が遠ければ先頭。
+function pickBiased(cands){
+  let best=cands[0], bestD=Infinity;
+  for(const c of cands){ const d=haversine(GEO_BIAS_LAT,GEO_BIAS_LON,c.lat,c.lon); if(d<bestD){ bestD=d; best=c; } }
+  return (bestD>GEO_NEAR_KM)? cands[0] : best;
+}
+// 地名 → 候補配列。国土地理院(日本特化・高速)を優先、ダメならPhoton(OSM)。どちらもCORS対応・直接呼べる。
+async function geocodeCandidates(place){
+  // 1) 国土地理院 地名検索
+  try{
+    const arr=JSON.parse(await fetchText(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(place)}`, {timeout:6000}));
+    if(Array.isArray(arr) && arr.length){
+      const cands=arr.filter(f=>f.geometry&&f.geometry.coordinates)
+        .map(f=>({lon:+f.geometry.coordinates[0], lat:+f.geometry.coordinates[1], label:(f.properties&&f.properties.title)||place, props:null}));
+      if(cands.length) return cands;
+    }
+  }catch(e){ /* Photonにフォールバック */ }
+  // 2) Photon(komoot/OSM) フォールバック
+  const sj=JSON.parse(await fetchText(`https://photon.komoot.io/api/?q=${encodeURIComponent(place)}&limit=8&lang=default&lat=${GEO_BIAS_LAT}&lon=${GEO_BIAS_LON}`, {timeout:6000}));
+  if(!sj.features || !sj.features.length) throw new Error("場所が見つかりませんでした");
+  return sj.features.filter(f=>f.geometry&&f.geometry.coordinates)
+    .map(f=>({lon:+f.geometry.coordinates[0], lat:+f.geometry.coordinates[1], label:(f.properties&&(f.properties.name))||place, props:f.properties}));
+}
+// 地名 → {lat, lon, pc(都道府県コード)}。結果はキャッシュ。
 async function geocode(place){
   const ck=GEO_CACHE_PREFIX+place;
   const c=localStorage.getItem(ck);
   if(c){ try{ return JSON.parse(c); }catch(e){} }
-  // 1) 地名検索（東京湾を中心にバイアス。同名地名が複数あるとき湾奥側を優先しやすくする）
-  const BIAS_LAT=35.55, BIAS_LON=139.85, NEAR_KM=200;
-  const sj=JSON.parse(await fetchText(`https://photon.komoot.io/api/?q=${encodeURIComponent(place)}&limit=8&lang=default&lat=${BIAS_LAT}&lon=${BIAS_LON}`));
-  if(!sj.features || !sj.features.length) throw new Error("場所が見つかりませんでした");
-  // バイアス点から最も近い候補を選ぶ。ただし全候補が遠い(>NEAR_KM)場合は検索順の先頭を採用。
-  let f=sj.features[0], bestD=Infinity;
-  for(const cand of sj.features){
-    const clo=+cand.geometry.coordinates[0], cla=+cand.geometry.coordinates[1];
-    const d=haversine(BIAS_LAT,BIAS_LON,cla,clo);
-    if(d<bestD){ bestD=d; f=cand; }
-  }
-  if(bestD>NEAR_KM) f=sj.features[0];
-  const lon=+f.geometry.coordinates[0], lat=+f.geometry.coordinates[1];
-  // 2) 都道府県コード：まずGSI逆ジオ（陸上で最も確実）、ダメならPhotonの住所から推定（沖合の堤防・桟橋など）
+  const cands=await geocodeCandidates(place);
+  if(!cands.length) throw new Error("場所が見つかりませんでした");
+  const f=pickBiased(cands);
+  const lat=f.lat, lon=f.lon;
+  // 都道府県コード判定：
+  //  a) 候補の住所文字列(label)に都道府県名があれば最優先（GSIのtitle「東京都大島町波浮港」等）
+  //  b) Photon候補なら住所プロパティから
+  //  c) 最終手段：座標から逆ジオ（GSI逆ジオ→Photon逆ジオ。海上座標も拾える）
   let pc=null;
-  try{
-    const rj=JSON.parse(await fetchText(`https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`));
-    const muni=rj.results && rj.results.muniCd;
-    if(muni && /^\d{4,5}$/.test(String(muni))) pc=parseInt(String(muni).slice(0,2),10);
-  }catch(e){}
-  if(!pc) pc=prefFromProps(f.properties);
+  if(f.label){ for(let i=0;i<PREF_NAMES.length;i++){ if(f.label.indexOf(PREF_NAMES[i])>=0){ pc=i+1; break; } } }
+  if(!pc) pc=prefFromProps(f.props);
+  if(!pc) pc=await prefFromCoords(lat, lon);
   if(!pc) throw new Error("都道府県を特定できませんでした");
-  const geo={lat, lon, pc, label:(f.properties&&(f.properties.name||place))||place};
+  const geo={lat, lon, pc, label:f.label||place};
   try{ localStorage.setItem(ck, JSON.stringify(geo)); }catch(e){}
   return geo;
 }
@@ -485,8 +510,7 @@ async function getTide(pc, hc, dateStr){
   const c = localStorage.getItem(ck);
   if(c){ try{ return JSON.parse(c); }catch(e){} }
   const [y,m,d]=dateStr.split("-").map(Number);
-  const url=`https://tide736.net/api/get_tide.php?pc=${pc}&hc=${hc}&yr=${y}&mn=${m}&dy=${d}&rg=day`;
-  const j=JSON.parse(await fetchTide(url));
+  const j=JSON.parse(await fetchTide({pc, hc, yr:y, mn:m, dy:d}));
   if(j.status!==1 || !j.tide || !j.tide.chart || !j.tide.chart[dateStr]) throw new Error("データ取得に失敗しました");
   const ch=j.tide.chart[dateStr];
   const out={

@@ -1,4 +1,11 @@
-# 静的HTMLのみ。ビルド不要、ルート直下を公開。
+# 静的HTML + Netlify Functions（潮汐APIの中継）
 [build]
   publish = "."
   command = ""
+  functions = "netlify/functions"
+
+# /api/tide?... を関数にルーティング（短いURLで呼べるように）
+[[redirects]]
+  from = "/api/tide"
+  to = "/.netlify/functions/tide"
+  status = 200
