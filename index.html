@@ -389,8 +389,14 @@ async function fetchText(url, opts){
 }
 
 // tide736.net はブラウザから直接呼べない(CORS非対応)。
-// 本番(Netlify公開)では自前のサーバー関数 /api/tide で中継する（プロキシ依存なし・安定）。
-// それが使えない場合（ローカルfile://等）のみ公開プロキシにフォールバック。
+// 自前のサーバー関数 /api/tide で中継する（プロキシ依存なし・安定）。
+//  - 同一オリジン(Netlify)では相対パス
+//  - 別ホスト(GitHub Pages等)からは、稼働中のNetlify関数を絶対URLで呼ぶ（CORS対応済み）
+const TIDE_FUNCS = [
+  qs => `/api/tide?${qs}`,
+  qs => `https://papaya-truffle-508430.netlify.app/api/tide?${qs}`,
+];
+// 最後の保険：公開プロキシ
 const TIDE_PROXIES = [
   u => "https://cors.eu.org/" + u,
   u => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u),
@@ -400,12 +406,12 @@ const TIDE_PROXIES = [
 async function fetchTide(p){
   const qs=`pc=${p.pc}&hc=${p.hc}&yr=${p.yr}&mn=${p.mn}&dy=${p.dy}&rg=${p.rg||"day"}`;
   const tideURL=`https://tide736.net/api/get_tide.php?${qs}`;
-  // 1) 自前のNetlify Function（http/httpsで配信されている時のみ。file://では不可）
-  if(location.protocol==="http:"||location.protocol==="https:"){
+  // 1) 自前のNetlify Function（相対→絶対の順）
+  for(const fn of TIDE_FUNCS){
     try{
-      const r=await fetchWithTimeout(`/api/tide?${qs}`, 9000);
+      const r=await fetchWithTimeout(fn(qs), 9000);
       if(r.ok){ const t=await r.text(); if(t && t.indexOf('"status"')>=0) return t; }
-    }catch(e){ /* フォールバックへ */ }
+    }catch(e){ /* 次へ */ }
   }
   // 2) 公開プロキシ（中継関数が無い/失敗した場合）
   let lastErr;
