@@ -157,17 +157,22 @@
       <button id="cancel-edit" type="button">編集をやめる</button>
     </div>
     <div class="card">
-      <div class="note" style="margin-top:0; margin-bottom:12px;">📸 下の「釣れた魚」に<b>位置情報つきの写真</b>を入れると、日時・場所・潮汐を自動で読み取ります。手入力でもOK。</div>
+      <div class="note" style="margin-top:0; margin-bottom:12px;">📸 下の「釣れた魚」に<b>位置情報つきの写真</b>を入れると、日付・場所・潮汐を自動で読み取り、各魚の釣れた時刻をグラフに🐟で表示します。<b>釣行の開始・終了時間は手入力</b>（写真の時刻からまとめて入れることもできます）。</div>
+      <div class="field">
+        <label>日付（写真から自動・編集可）</label>
+        <input type="date" id="f-date">
+      </div>
       <div class="row field">
         <div>
-          <label>日付</label>
-          <input type="date" id="f-date">
+          <label>釣行 開始</label>
+          <input type="time" id="f-start">
         </div>
         <div>
-          <label>時間</label>
-          <input type="time" id="f-time">
+          <label>釣行 終了</label>
+          <input type="time" id="f-end">
         </div>
       </div>
+      <button type="button" class="btn ghost sm" id="fill-times" style="width:100%; margin-top:-4px; margin-bottom:4px;">🐟 釣果の時間から開始・終了を埋める</button>
       <div class="field" style="margin-bottom:0;">
         <label>場所（釣り場・スポット名）</label>
         <input type="text" id="f-loc" placeholder="例：豊洲ぐるり公園 / 横浜港 / 〇〇漁港" list="loc-list" autocomplete="off">
@@ -529,8 +534,8 @@ async function getTide(pc, hc, dateStr){
 }
 
 /* ===================== 描画 ===================== */
-// fishMarks: [{m:分, label:魚名}] … 各魚の釣れた時刻を🐟マークで表示
-function drawTide(canvas, tide, markMin, fishMarks){
+// span: {start,end}（分）… 釣行時間帯を帯で表示 / fishMarks: [{m,label}] … 各魚の釣れた時刻を🐟で表示
+function drawTide(canvas, tide, span, fishMarks){
   const pts=tide.points;
   if(!pts||!pts.length) return;
   const dpr=window.devicePixelRatio||1;
@@ -573,12 +578,21 @@ function drawTide(canvas, tide, markMin, fishMarks){
   for(const e of (tide.flood||[])){ ctx.beginPath(); ctx.arc(X(e.m),Y(e.h),3.5,0,Math.PI*2); ctx.fillStyle="#36c2ff"; ctx.fill(); }
   for(const e of (tide.edd||[])){ ctx.beginPath(); ctx.arc(X(e.m),Y(e.h),3.5,0,Math.PI*2); ctx.fillStyle="#2bd9a8"; ctx.fill(); }
 
-  if(markMin!=null && markMin>=0 && markMin<=1440){
-    const x=X(markMin), y=Y(hAt(markMin));
-    ctx.strokeStyle="#ffd166"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
-    ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+H); ctx.stroke(); ctx.setLineDash([]);
-    ctx.beginPath(); ctx.arc(x,y,4.5,0,Math.PI*2); ctx.fillStyle="#ffd166"; ctx.fill();
-    ctx.strokeStyle="#04263b"; ctx.lineWidth=1.5; ctx.stroke();
+  // 釣行時間帯（開始〜終了）を帯で表示
+  if(span && (span.start!=null || span.end!=null)){
+    const s=span.start!=null?span.start:span.end;
+    const e=span.end!=null?span.end:span.start;
+    const xs=X(Math.max(0,Math.min(s,e))), xe=X(Math.min(1440,Math.max(s,e)));
+    if(xe>xs+0.5){
+      ctx.fillStyle="rgba(255,209,102,.16)";
+      ctx.fillRect(xs,padT,xe-xs,H);
+      ctx.strokeStyle="rgba(255,209,102,.7)"; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(xs,padT); ctx.lineTo(xs,padT+H); ctx.moveTo(xe,padT); ctx.lineTo(xe,padT+H); ctx.stroke();
+    } else {
+      // 開始＝終了 or 片方のみ → 縦線1本
+      ctx.strokeStyle="rgba(255,209,102,.7)"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(xs,padT); ctx.lineTo(xs,padT+H); ctx.stroke(); ctx.setLineDash([]);
+    }
   }
 
   // 各魚の釣れた時刻マーク（🐟）
@@ -606,13 +620,19 @@ let currentTide=null;       // 記録タブに表示中の潮汐
 let currentPort=null;       // {pc,hc,name} 自動解決した基準港
 let tideReqToken=0;         // 競合する非同期リクエストの打ち消し用
 // ユーザーが手で編集したか（写真の自動反映で上書きしないため）
-let userEditedDate=false, userEditedTime=false, userEditedLoc=false;
+let userEditedDate=false, userEditedLoc=false;
 // 写真から日時/場所を一度確定したか（2枚目以降の写真では上書きしない＝最初の1枚でFIX）
 let photoDateLocked=false, photoLocLocked=false;
 // 既存記録の編集中フラグ（null=新規作成）
 let editingId=null, editingCreatedAt=null;
 
-function markFromTime(){ const t=el("f-time").value; return t? parseHM(t): null; }
+// 釣行時間帯 {start,end}（分）。未入力ならnull。
+function tripSpan(){
+  const s=el("f-start").value, e=el("f-end").value;
+  const start=s?parseHM(s):null, end=e?parseHM(e):null;
+  if(start==null && end==null) return null;
+  return {start, end};
+}
 function setPortInfo(html){ el("port-info").innerHTML=html; }
 
 // 緯度経度→都道府県コード（GSI逆ジオ→ダメならPhoton住所）。geocode()内と同等のロジック。
@@ -697,7 +717,7 @@ function renderTide(tide){
   const _fishMarks = (typeof collectFishMarks==="function") ? collectFishMarks() : [];
   el("tide-status").style.display="none";
   const cv=el("tide-canvas"); cv.style.display="block";
-  drawTide(cv, tide, markFromTime(), _fishMarks);
+  drawTide(cv, tide, tripSpan(), _fishMarks);
 
   el("tide-type").textContent = tide.tideType||"—";
   el("moon-info").textContent = tide.moonAge!=null ? `🌙 月齢 ${tide.moonAge.toFixed(1)}` : "";
@@ -779,12 +799,12 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
     if(!meta || (!meta.date && meta.lat==null)){
       hint.className="exif-hint show"; hint.innerHTML=`<span>📷 この写真に撮影日時・位置の情報はありません</span>`; return;
     }
-    // --- 撮影日時 → この魚の釣れた時刻（行に保持）＋記録の日付/時間（最初の1枚でFIX）---
+    // --- 撮影日時 → この魚の釣れた時刻（行に保持）＋記録の日付（最初の1枚でFIX。時刻は手動の釣行時間と分離）---
     if(meta.date && meta.time){
       row.dataset.tmin = parseHM(meta.time);   // この魚の釣れた時刻（潮汐グラフのマーク用）
       const lockedDate = userEditedDate || photoDateLocked;
       if(!lockedDate){
-        el("f-date").value=meta.date; el("f-time").value=meta.time;
+        el("f-date").value=meta.date;          // 日付のみ自動。釣行の開始/終了時間は手動入力。
         photoDateLocked=true;
       }
       msgs.push(`🕒 ${meta.date} ${meta.time}`);
@@ -827,11 +847,22 @@ function collectFishMarks(){
   });
   return marks;
 }
-// 記録タブの潮汐グラフを、各魚の釣れた時刻マーク付きで再描画
+// 記録タブの潮汐グラフを、釣行時間帯＋各魚の釣れた時刻マーク付きで再描画
 function redrawTideMarks(){
   if(currentTide && el("view-log").classList.contains("on")){
-    drawTide(el("tide-canvas"), currentTide, markFromTime(), collectFishMarks());
+    drawTide(el("tide-canvas"), currentTide, tripSpan(), collectFishMarks());
   }
+}
+function fmtMinHM(m){ return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0"); }
+// 釣果（魚）の時刻の最小・最大で、釣行 開始・終了を埋める
+function fillTimesFromFish(){
+  const marks=collectFishMarks().map(x=>x.m).filter(m=>m!=null);
+  if(!marks.length){ toast("時刻つきの釣果写真がありません"); return; }
+  const min=Math.min(...marks), max=Math.max(...marks);
+  el("f-start").value=fmtMinHM(min);
+  el("f-end").value=fmtMinHM(max);
+  redrawTideMarks();
+  toast("釣果の時間から開始・終了を入れました");
 }
 function getFish(){
   const out=[];
@@ -972,12 +1003,12 @@ async function runPhotoDiag(file){
 function resetForm(){
   const now=new Date();
   el("f-date").value=now.toISOString().slice(0,10);
-  el("f-time").value=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+  el("f-start").value=""; el("f-end").value="";
   el("f-loc").value="";
   el("f-tackle").value="";
   el("f-memo").value="";
   el("fish-list").innerHTML=""; addFishRow();
-  userEditedDate=false; userEditedTime=false; userEditedLoc=false; // 写真の自動反映を再び許可
+  userEditedDate=false; userEditedLoc=false; // 写真の自動反映を再び許可
   photoDateLocked=false; photoLocLocked=false; // 写真FIXを解除（新しい釣行）
   editingId=null; editingCreatedAt=null; setEditingUI(false); // 編集モード解除
   refreshTide();
@@ -995,10 +1026,13 @@ async function saveTrip(){
     } else if(!f.photo){ f.photo=null; }
   }
   const editing = !!editingId;
+  const span=tripSpan();
   const rec={
     id: editing ? editingId : (Date.now().toString(36)+Math.random().toString(36).slice(2,6)),
     date: dateStr,
-    time: el("f-time").value,
+    start: span?span.start:null,   // 釣行 開始（分・手動）
+    end: span?span.end:null,       // 釣行 終了（分・手動）
+    time: el("f-start").value||"", // 互換: 一覧表示用に開始時刻文字列も保持
     loc,
     pc: currentPort ? currentPort.pc : null, hc: currentPort ? currentPort.hc : null,
     tide: currentTide && currentTide.date===dateStr ? currentTide : null, // 潮汐スナップショット
@@ -1049,10 +1083,14 @@ async function renderHistory(){
       ? r.fish.map(f=>{ const u=photoURL(f.photo); return `<div class="fishline"><span class="fname">${esc(f.name||"魚")}</span>${f.size?` ${esc(f.size)}cm`:""}${f.count?` ×${esc(f.count)}`:""}${u?`<div class="fish-photos"><img src="${u}" class="zoom" alt="釣果写真"></div>`:""}</div>`; }).join("")
       : `<div class="fishline" style="color:#9fc0db">釣果なし（ボウズ）</div>`;
     const tideInfo = r.tide ? `<div class="kv"><b>潮汐:</b> ${esc(r.tide.harborName||"")}${r.tide.sunrise?` ／ 🌅${esc(r.tide.sunrise)} 🌇${esc(r.tide.sunset||"")}`:""}</div>` : "";
+    // 釣行時間の表示：開始〜終了（旧データは単一time）
+    let timeStr="";
+    if(r.start!=null||r.end!=null){ timeStr=(r.start!=null?fmtMinHM(r.start):"")+"〜"+(r.end!=null?fmtMinHM(r.end):""); }
+    else if(r.time){ timeStr=esc(r.time); }
     div.innerHTML=`
       <div class="top">
         <div>
-          <div class="dt">${esc(r.date)} ${esc(r.time||"")}</div>
+          <div class="dt">${esc(r.date)} ${timeStr}</div>
           <div class="loc">📍 ${esc(r.loc||"場所未記入")}</div>
         </div>
         <span class="${badgeClass(r.tideType)}">${esc(r.tideType||"—")}</span>
@@ -1071,15 +1109,18 @@ async function renderHistory(){
     if(r.tide&&r.tide.points&&r.tide.points.length){
       const mc=div.querySelector(".mini-canvas");
       const histMarks=(r.fish||[]).filter(f=>f.t!=null).map(f=>({m:f.t, label:f.name||""}));
-      drawTide(mc, r.tide, r.time? parseHM(r.time): null, histMarks);
+      const histSpan=(r.start!=null||r.end!=null)?{start:r.start,end:r.end}:(r.time?{start:parseHM(r.time),end:null}:null);
+      drawTide(mc, r.tide, histSpan, histMarks);
     }
     div.querySelectorAll(".zoom").forEach(im=>im.onclick=()=>openLightbox(im.src));
     div.querySelector(".del").onclick=async ()=>{ if(confirm("この記録を削除しますか？")){ await dbDeleteRecord(r.id); await renderHistory(); toast("削除しました"); } };
     div.querySelector(".edit").onclick=()=>startEdit(r);
     div.querySelector(".dup").onclick=()=>{
       el("f-date").value=new Date().toISOString().slice(0,10);
+      el("f-start").value=""; el("f-end").value="";
       el("f-loc").value=r.loc||""; el("f-tackle").value=r.tackle||"";
-      userEditedLoc=!!r.loc; userEditedDate=false; userEditedTime=false; // 引き継いだ場所は尊重
+      userEditedLoc=!!r.loc; userEditedDate=false; // 引き継いだ場所は尊重
+      photoDateLocked=false; photoLocLocked=!!r.loc;
       el("fish-list").innerHTML=""; (r.fish.length?r.fish:[{}]).forEach(f=>addFishRow(f.name,f.size,f.count)); // 写真は引き継がない
       switchView("log"); refreshTide(); toast("場所・タックルを引き継ぎました");
     };
@@ -1090,12 +1131,13 @@ async function renderHistory(){
 async function startEdit(r){
   editingId=r.id; editingCreatedAt=r.createdAt;
   el("f-date").value=r.date||"";
-  el("f-time").value=r.time||"";
+  el("f-start").value = r.start!=null ? fmtMinHM(r.start) : (r.time||""); // 旧データはtimeを開始に
+  el("f-end").value   = r.end!=null ? fmtMinHM(r.end) : "";
   el("f-loc").value=r.loc||"";
   el("f-tackle").value=r.tackle||"";
   el("f-memo").value=r.memo||"";
   // 手入力済み扱い（写真の自動反映で勝手に上書きしない）
-  userEditedDate=true; userEditedTime=true; userEditedLoc=!!r.loc;
+  userEditedDate=true; userEditedLoc=!!r.loc;
   photoDateLocked=true; photoLocLocked=!!r.loc; // 既存記録：写真追加で日時・場所を変えない
   // 魚の行（写真Blobはフォーム用にdataURLへ）
   el("fish-list").innerHTML="";
@@ -1203,16 +1245,18 @@ async function init(){
 
   const now=new Date();
   el("f-date").value=now.toISOString().slice(0,10);
-  el("f-time").value=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
   el("fish-list").innerHTML=""; addFishRow();
 
   // ユーザーが手で触った欄は写真の自動反映で上書きしない
   el("f-date").addEventListener("input", ()=>{ userEditedDate=true; });
-  el("f-time").addEventListener("input", ()=>{ userEditedTime=true; });
   el("f-loc").addEventListener("input", ()=>{ userEditedLoc=true; });
   el("f-date").addEventListener("change", refreshTide);
-  el("f-time").addEventListener("change", ()=>{ if(currentTide){ drawTide(el("tide-canvas"), currentTide, markFromTime()); } });
   el("f-loc").addEventListener("change", refreshTide); // 場所確定（blur/Enter）で潮汐を自動取得
+  // 釣行 開始・終了時間 → 潮汐グラフの帯を更新（手動入力）
+  const onSpanChange=()=>{ if(currentTide){ drawTide(el("tide-canvas"), currentTide, tripSpan(), collectFishMarks()); } };
+  el("f-start").addEventListener("input", onSpanChange);
+  el("f-end").addEventListener("input", onSpanChange);
+  el("fill-times").onclick=fillTimesFromFish;
   el("add-fish").onclick=()=>addFishRow();
   el("save-btn").onclick=saveTrip;
   el("reset-btn").onclick=()=>{ resetForm(); toast("クリアしました"); };
@@ -1223,7 +1267,7 @@ async function init(){
   el("clear-btn").onclick=async ()=>{ if(confirm("本当にすべての釣行記録を削除しますか？この操作は元に戻せません。")){ await dbClearRecords(); await renderHistory(); toast("全データを削除しました"); } };
   document.querySelectorAll(".tabbar button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   el("lightbox").onclick=closeLightbox;
-  window.addEventListener("resize", ()=>{ if(currentTide && el("view-log").classList.contains("on")) drawTide(el("tide-canvas"), currentTide, markFromTime()); });
+  window.addEventListener("resize", ()=>{ if(currentTide && el("view-log").classList.contains("on")) drawTide(el("tide-canvas"), currentTide, tripSpan(), collectFishMarks()); });
 
   refreshTide(); // 起動時は場所未入力 → 案内表示
 }
