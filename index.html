@@ -84,14 +84,15 @@
   .fish-item .size{flex:1.1;}
   .fish-item .cnt{flex:.9;}
   .fish-item .del{flex:0 0 auto; width:38px; background:transparent; border:1px solid var(--line); color:var(--danger); border-radius:9px; font-size:18px; padding:8px 0; align-self:stretch;}
-  .photo-btn{flex:0 0 auto; width:54px; height:54px; border-radius:10px; border:1px dashed var(--line); background:var(--bg2);
-    color:var(--sub); font-size:22px; cursor:pointer; padding:0; overflow:hidden; position:relative; display:flex; align-items:center; justify-content:center;}
-  .photo-btn .ph-content{width:100%; height:100%; display:flex; align-items:center; justify-content:center;}
+  .photo-wrap{flex:0 0 auto; width:54px; height:54px; position:relative;}
+  .photo-btn{display:flex; width:100%; height:100%; border-radius:10px; border:1px dashed var(--line); background:var(--bg2);
+    color:var(--sub); font-size:22px; cursor:pointer; padding:0; margin:0; overflow:hidden; align-items:center; justify-content:center; -webkit-tap-highlight-color:rgba(255,255,255,.1);}
+  .photo-btn .ph-content{width:100%; height:100%; display:flex; align-items:center; justify-content:center; pointer-events:none;}
   .photo-btn img{width:100%; height:100%; object-fit:cover; display:block;}
-  .photo-btn .rm{position:absolute; top:1px; right:1px; width:18px; height:18px; line-height:18px; text-align:center; border-radius:50%;
-    background:rgba(0,0,0,.6); color:#fff; font-size:13px; border:none; padding:0; display:none; z-index:2; cursor:pointer;}
-  .photo-btn.has{border-style:solid;}
-  .photo-btn.has .rm{display:block;}
+  .photo-wrap .rm{position:absolute; top:1px; right:1px; width:20px; height:20px; line-height:20px; text-align:center; border-radius:50%;
+    background:rgba(0,0,0,.65); color:#fff; font-size:14px; display:none; z-index:3; cursor:pointer;}
+  .photo-wrap.has .photo-btn{border-style:solid;}
+  .photo-wrap.has .rm{display:block;}
   .fish-photos{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
   .fish-photos img{width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line); cursor:pointer;}
   .lightbox{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; padding:16px;}
@@ -751,10 +752,12 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
   const row=document.createElement("div"); row.className="fish-item";
   if(tmin!=null) row.dataset.tmin=tmin;
   row.innerHTML=`
-    <div class="photo-btn" role="button" tabindex="0" title="写真を選ぶ">
-      <span class="ph-content"></span>
+    <div class="photo-wrap">
+      <label class="photo-btn" title="写真を選ぶ">
+        <span class="ph-content"></span>
+        <input type="file" accept="image/*" style="display:none;">
+      </label>
       <span class="rm" title="写真を削除">×</span>
-      <input type="file" style="display:none;">
     </div>
     <div class="fields">
       <div class="frow">
@@ -765,18 +768,19 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
       <div class="exif-hint"></div>
     </div>
     <button class="del" title="行を削除">×</button>`;
-  const pbtn=row.querySelector(".photo-btn");
+  const wrap=row.querySelector(".photo-wrap");
+  const pbtn=row.querySelector(".photo-btn");          // <label> … タップでネイティブにファイル選択が開く
   const content=row.querySelector(".ph-content");
-  const file=row.querySelector('.photo-btn input[type=file]'); // accept指定なし＝ファイルアプリ経由を選びやすく（位置情報を残す）
+  const file=row.querySelector('.photo-wrap input[type=file]');
   const hint=row.querySelector(".exif-hint");
   function setPhoto(data){
     pbtn.dataset.photo=data||"";
-    if(data){ pbtn.classList.add("has"); content.innerHTML=`<img src="${data}">`; }
-    else    { pbtn.classList.remove("has"); content.textContent="📷"; hint.className="exif-hint"; hint.innerHTML=""; }
+    if(data){ wrap.classList.add("has"); content.innerHTML=`<img src="${data}">`; }
+    else    { wrap.classList.remove("has"); content.textContent="📷"; hint.className="exif-hint"; hint.innerHTML=""; }
   }
   setPhoto(photo);
-  pbtn.onclick=e=>{ if(e.target.classList.contains("rm")) return; file.click(); };
-  pbtn.onkeydown=e=>{ if((e.key==="Enter"||e.key===" ")&&!e.target.classList.contains("rm")){ e.preventDefault(); file.click(); } };
+  // ファイル選択は <label> のネイティブ挙動で開く（JSの.click()に頼らない＝モバイルで確実）。
+  // 削除×はlabel外なので、タップしてもファイル選択は開かない（rmのonclickは後段で設定）。
   // 写真ファイルを処理（撮影日時・GPSを読み、圧縮して保存）
   async function handleFile(inputEl){
     if(!inputEl.files[0]){ return; }
