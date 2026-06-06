@@ -753,11 +753,9 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
   if(tmin!=null) row.dataset.tmin=tmin;
   row.innerHTML=`
     <div class="photo-wrap">
-      <label class="photo-btn" title="写真を選ぶ">
-        <span class="ph-content"></span>
-        <input type="file" accept="image/*" style="display:none;">
-      </label>
+      <button type="button" class="photo-btn" title="写真を選ぶ"><span class="ph-content"></span></button>
       <span class="rm" title="写真を削除">×</span>
+      <input type="file" accept="image/*" style="display:none;">
     </div>
     <div class="fields">
       <div class="frow">
@@ -769,9 +767,9 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
     </div>
     <button class="del" title="行を削除">×</button>`;
   const wrap=row.querySelector(".photo-wrap");
-  const pbtn=row.querySelector(".photo-btn");          // <label> … タップでネイティブにファイル選択が開く
+  const pbtn=row.querySelector(".photo-btn");          // 普通の<button>
   const content=row.querySelector(".ph-content");
-  const file=row.querySelector('.photo-wrap input[type=file]');
+  const file=row.querySelector('.photo-wrap input[type=file]'); // ボタンの外（兄弟）に置いた入力
   const hint=row.querySelector(".exif-hint");
   function setPhoto(data){
     pbtn.dataset.photo=data||"";
@@ -779,8 +777,8 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
     else    { wrap.classList.remove("has"); content.textContent="📷"; hint.className="exif-hint"; hint.innerHTML=""; }
   }
   setPhoto(photo);
-  // ファイル選択は <label> のネイティブ挙動で開く（JSの.click()に頼らない＝モバイルで確実）。
-  // 削除×はlabel外なので、タップしてもファイル選択は開かない（rmのonclickは後段で設定）。
+  // 以前から動いていた方式：普通のボタン → 入れ子でない別inputを .click() で開く
+  pbtn.onclick=()=>file.click();
   // 写真ファイルを処理（撮影日時・GPSを読み、圧縮して保存）
   async function handleFile(inputEl){
     if(!inputEl.files[0]){ return; }
