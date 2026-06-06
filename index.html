@@ -93,6 +93,8 @@
     background:rgba(0,0,0,.65); color:#fff; font-size:14px; display:none; z-index:3; cursor:pointer;}
   .photo-wrap.has .photo-btn{border-style:solid;}
   .photo-wrap.has .rm{display:block;}
+  /* 見えないが「存在する」入力欄（display:noneだとモバイルでlabelタップが効かない端末がある） */
+  .vhide{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); border:0; opacity:0;}
   .fish-photos{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
   .fish-photos img{width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line); cursor:pointer;}
   .lightbox{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; padding:16px;}
@@ -748,14 +750,16 @@ function renderTide(tide){
 }
 
 /* ===================== フォーム操作 ===================== */
+let _fishInputSeq=0;
 function addFishRow(name="",size="",count="",photo="",tmin=null){
   const row=document.createElement("div"); row.className="fish-item";
   if(tmin!=null) row.dataset.tmin=tmin;
+  const fid="photo-input-"+(++_fishInputSeq); // labelのfor= と input id= を一致させる
   row.innerHTML=`
     <div class="photo-wrap">
-      <button type="button" class="photo-btn" title="写真を選ぶ"><span class="ph-content"></span></button>
+      <label class="photo-btn" for="${fid}" title="写真を選ぶ"><span class="ph-content"></span></label>
       <span class="rm" title="写真を削除">×</span>
-      <input type="file" accept="image/*" style="display:none;">
+      <input id="${fid}" type="file" accept="image/*" class="vhide">
     </div>
     <div class="fields">
       <div class="frow">
@@ -767,9 +771,9 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
     </div>
     <button class="del" title="行を削除">×</button>`;
   const wrap=row.querySelector(".photo-wrap");
-  const pbtn=row.querySelector(".photo-btn");          // 普通の<button>
+  const pbtn=row.querySelector(".photo-btn");          // <label for=...>（idで入力と紐付け）
   const content=row.querySelector(".ph-content");
-  const file=row.querySelector('.photo-wrap input[type=file]'); // ボタンの外（兄弟）に置いた入力
+  const file=row.querySelector('.photo-wrap input[type=file]');
   const hint=row.querySelector(".exif-hint");
   function setPhoto(data){
     pbtn.dataset.photo=data||"";
@@ -777,8 +781,7 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
     else    { wrap.classList.remove("has"); content.textContent="📷"; hint.className="exif-hint"; hint.innerHTML=""; }
   }
   setPhoto(photo);
-  // 以前から動いていた方式：普通のボタン → 入れ子でない別inputを .click() で開く
-  pbtn.onclick=()=>file.click();
+  // ファイル選択は label[for] のネイティブ挙動で開く（JSの.click()を使わない＝モバイルChromeで確実）
   // 写真ファイルを処理（撮影日時・GPSを読み、圧縮して保存）
   async function handleFile(inputEl){
     if(!inputEl.files[0]){ return; }
