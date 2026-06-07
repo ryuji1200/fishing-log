@@ -81,8 +81,7 @@
   .edit-banner{display:flex; align-items:center; justify-content:space-between; gap:10px; background:#ffd16622; border:1px solid #ffd16677; color:var(--gold); border-radius:12px; padding:10px 14px; margin-bottom:12px; font-size:13px; font-weight:700;}
   .edit-banner button{background:transparent; border:1px solid #ffd16677; color:var(--gold); border-radius:8px; padding:6px 12px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;}
   .fish-item .name{flex:2;}
-  .fish-item .size{flex:1.1;}
-  .fish-item .cnt{flex:.9;}
+  .fish-item .size{flex:1;}
   .fish-item .del{flex:0 0 auto; width:38px; background:transparent; border:1px solid var(--line); color:var(--danger); border-radius:9px; font-size:18px; padding:8px 0; align-self:stretch;}
   .photo-wrap{flex:0 0 auto; width:54px; height:54px; position:relative;}
   .photo-btn{display:flex; width:100%; height:100%; border-radius:10px; border:1px dashed var(--line); background:var(--bg2);
@@ -765,7 +764,7 @@ function renderTide(tide){
 }
 
 /* ===================== フォーム操作 ===================== */
-function addFishRow(name="",size="",count="",photo="",tmin=null){
+function addFishRow(name="",size="",photo="",tmin=null){
   const row=document.createElement("div"); row.className="fish-item";
   if(tmin!=null) row.dataset.tmin=tmin;
   // 入力は label の内側に直接置く（暗黙の関連付け）＋ display:none を避ける＝モバイルで確実にタップで開く
@@ -778,7 +777,6 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
       <div class="frow">
         <input class="name" placeholder="魚種" value="${esc(name)}">
         <input class="size" placeholder="サイズcm" inputmode="decimal" value="${esc(size)}">
-        <input class="cnt"  placeholder="匹" inputmode="numeric" value="${esc(count)}">
       </div>
       <div class="exif-hint"></div>
     </div>
@@ -888,10 +886,9 @@ function getFish(){
   document.querySelectorAll("#fish-list .fish-item").forEach(r=>{
     const name=r.querySelector(".name").value.trim();
     const size=r.querySelector(".size").value.trim();
-    const count=r.querySelector(".cnt").value.trim();
     const photo=r.querySelector(".photo-btn").dataset.photo||"";
     const tmin=(r.dataset.tmin!=null&&r.dataset.tmin!=="")?parseInt(r.dataset.tmin,10):null; // 釣れた時刻(分)
-    if(name||size||count||photo) out.push({name,size,count,photo,t:tmin});
+    if(name||size||photo) out.push({name,size,photo,t:tmin});
   });
   return out;
 }
@@ -1089,7 +1086,7 @@ async function renderHistory(){
   const list=el("rec-list");
   revokePhotoURLs();
   let fishCnt=0; const species=new Set();
-  recs.forEach(r=>(r.fish||[]).forEach(f=>{ fishCnt+=parseInt(f.count)||(f.name?1:0); if(f.name)species.add(f.name); }));
+  recs.forEach(r=>(r.fish||[]).forEach(f=>{ if(f.name||f.size||f.photo) fishCnt++; if(f.name)species.add(f.name); }));
   el("st-trips").textContent=recs.length;
   el("st-fish").textContent=fishCnt;
   el("st-species").textContent=species.size;
@@ -1099,7 +1096,7 @@ async function renderHistory(){
   recs.forEach(r=>{
     const div=document.createElement("div"); div.className="rec";
     const fishHtml=r.fish.length
-      ? r.fish.map(f=>{ const u=photoURL(f.photo); return `<div class="fishline"><span class="fname">${esc(f.name||"魚")}</span>${f.size?` ${esc(f.size)}cm`:""}${f.count?` ×${esc(f.count)}`:""}${u?`<div class="fish-photos"><img src="${u}" class="zoom" alt="釣果写真"></div>`:""}</div>`; }).join("")
+      ? r.fish.map(f=>{ const u=photoURL(f.photo); return `<div class="fishline"><span class="fname">${esc(f.name||"魚")}</span>${f.size?` ${esc(f.size)}cm`:""}${u?`<div class="fish-photos"><img src="${u}" class="zoom" alt="釣果写真"></div>`:""}</div>`; }).join("")
       : `<div class="fishline" style="color:#9fc0db">釣果なし（ボウズ）</div>`;
     const tideInfo = r.tide ? `<div class="kv"><b>潮汐:</b> ${esc(r.tide.harborName||"")}${r.tide.sunrise?` ／ 🌅${esc(r.tide.sunrise)} 🌇${esc(r.tide.sunset||"")}`:""}</div>` : "";
     // 釣行時間の表示：開始〜終了（旧データは単一time）
@@ -1140,7 +1137,7 @@ async function renderHistory(){
       el("f-loc").value=r.loc||""; el("f-tackle").value=r.tackle||"";
       userEditedLoc=!!r.loc; userEditedDate=false; // 引き継いだ場所は尊重
       photoDateLocked=false; photoLocLocked=!!r.loc;
-      el("fish-list").innerHTML=""; (r.fish.length?r.fish:[{}]).forEach(f=>addFishRow(f.name,f.size,f.count)); // 写真は引き継がない
+      el("fish-list").innerHTML=""; (r.fish.length?r.fish:[{}]).forEach(f=>addFishRow(f.name,f.size)); // 写真は引き継がない
       switchView("log"); refreshTide(); toast("場所・タックルを引き継ぎました");
     };
   });
@@ -1164,7 +1161,7 @@ async function startEdit(r){
   for(const f of fishArr){
     let photoData="";
     if(f.photo){ photoData = (typeof f.photo==="string") ? f.photo : await blobToDataURL(f.photo); }
-    addFishRow(f.name||"", f.size||"", f.count||"", photoData, f.t!=null?f.t:null);
+    addFishRow(f.name||"", f.size||"", photoData, f.t!=null?f.t:null);
   }
   // 保存済みの潮汐スナップショットがあれば復元（無ければ場所から取り直す）
   if(r.tide){ currentTide=r.tide; currentPort={pc:r.pc,hc:r.hc,name:r.tide.harborName}; renderTide(r.tide); }
