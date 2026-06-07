@@ -257,7 +257,7 @@
       <div class="note" style="margin-top:0; margin-bottom:12px;">写真を選んでも場所が出ないときに使います。その写真に撮影日時・位置情報（GPS）が残っているか調べます。<b>いつもアプリで使うのと同じ写真・同じ選び方</b>で選んでください。</div>
       <label class="btn ghost" style="text-align:center; display:block;">
         写真を選んでチェック
-        <input type="file" id="diag-file" accept="image/*" class="vhide">
+        <input type="file" id="diag-file" class="vhide">
       </label>
       <div id="diag-result"></div>
     </div>
@@ -762,7 +762,7 @@ function addFishRow(name="",size="",count="",photo="",tmin=null){
   // 入力は label の内側に直接置く（暗黙の関連付け）＋ display:none を避ける＝モバイルで確実にタップで開く
   row.innerHTML=`
     <div class="photo-wrap">
-      <label class="photo-btn" title="写真を選ぶ"><span class="ph-content"></span><input type="file" accept="image/*" class="vhide"></label>
+      <label class="photo-btn" title="写真を選ぶ"><span class="ph-content"></span><input type="file" class="vhide"></label>
       <span class="rm" title="写真を削除">×</span>
     </div>
     <div class="fields">
