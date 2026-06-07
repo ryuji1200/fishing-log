@@ -323,11 +323,20 @@ function idbTx(mode,fn){
     tx.onabort=()=>reject(tx.error||new Error("transaction aborted"));
   }));
 }
-// 記録の取得（作成日時の新しい順）
+// 記録の取得（釣行日付の新しい順。同日は開始時刻→登録順で安定化）
 function dbGetAllRecords(){
   return idbTx("readonly",store=>new Promise((res,rej)=>{
     const out=[]; const c=store.openCursor();
-    c.onsuccess=e=>{ const cur=e.target.result; if(cur){ out.push(cur.value); cur.continue(); } else { out.sort((a,b)=>b.createdAt-a.createdAt); res(out); } };
+    c.onsuccess=e=>{ const cur=e.target.result; if(cur){ out.push(cur.value); cur.continue(); } else {
+      out.sort((a,b)=>{
+        const da=a.date||"", db=b.date||"";
+        if(da!==db) return db<da ? -1 : 1;          // 日付の新しい順（YYYY-MM-DD文字列比較）
+        const sa=(a.start!=null?a.start:-1), sb=(b.start!=null?b.start:-1);
+        if(sa!==sb) return sb-sa;                    // 同日は開始時刻の遅い順
+        return (b.createdAt||0)-(a.createdAt||0);    // それも同じなら登録の新しい順
+      });
+      res(out);
+    } };
     c.onerror=e=>rej(e.target.error);
   }));
 }
