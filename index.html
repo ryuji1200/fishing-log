@@ -99,6 +99,12 @@
   .lightbox{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; padding:16px;}
   .lightbox.on{display:flex;}
   .lightbox img{max-width:100%; max-height:100%; border-radius:8px;}
+  .lightbox .map-lightbox-inner{width:100%; height:80vh; max-width:560px;}
+  .lightbox .map-lightbox-inner iframe{width:100%; height:100%; border:0; border-radius:12px;}
+  .loc-map{margin-top:8px; height:160px; border-radius:10px; overflow:hidden; border:1px solid var(--line);}
+  .loc-map iframe{width:100%; height:100%; border:0; display:block;}
+  .map-link{display:inline-block; margin-top:6px; font-size:12px; color:var(--accent); text-decoration:none;}
+  .rec .loc .map-btn{color:var(--accent); cursor:pointer; text-decoration:underline; font-size:12px; margin-left:6px; white-space:nowrap;}
   .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;}
   .chip{font-size:12px; padding:5px 10px; border-radius:16px; background:var(--bg2); border:1px solid var(--line); color:var(--sub); cursor:pointer;}
   .chip:active{background:var(--card2);}
@@ -181,6 +187,8 @@
         <datalist id="loc-list"></datalist>
         <div class="chips" id="loc-chips"></div>
         <div class="note" id="port-info" style="margin-top:8px;">釣果写真を選ぶと、撮影日時・場所・潮汐を自動で読み取ります。場所の手入力でもOK。</div>
+        <div class="loc-map" id="loc-map" style="display:none;"><iframe id="loc-map-frame" src="" title="撮影場所の地図"></iframe></div>
+        <a href="#" id="loc-map-link" class="map-link" style="display:none;" target="_blank" rel="noopener">🗺 大きな地図で見る</a>
       </div>
     </div>
 
@@ -282,6 +290,7 @@
 
 <div class="toast" id="toast"></div>
 <div class="lightbox" id="lightbox"><img id="lightbox-img" src="" alt=""></div>
+<div class="lightbox" id="map-lightbox"><div class="map-lightbox-inner"><iframe id="map-lightbox-frame" src="" title="撮影場所の地図"></iframe></div></div>
 
 <script>
 "use strict";
@@ -642,6 +651,31 @@ let userEditedDate=false, userEditedLoc=false;
 let photoDateLocked=false, photoLocLocked=false;
 // 既存記録の編集中フラグ（null=新規作成）
 let editingId=null, editingCreatedAt=null;
+// 写真のGPSから確定した座標（地図ピン用）
+let formLat=null, formLon=null;
+
+// 撮影場所の地図（ピン付き）を場所カードに表示
+function showLocMap(lat,lon){
+  formLat=lat; formLon=lon;
+  const dLon=0.012, dLat=0.009;
+  el("loc-map-frame").src=`https://www.openstreetmap.org/export/embed.html?bbox=${lon-dLon}%2C${lat-dLat}%2C${lon+dLon}%2C${lat+dLat}&marker=${lat}%2C${lon}`;
+  el("loc-map").style.display="block";
+  const link=el("loc-map-link");
+  link.href=`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
+  link.style.display="inline-block";
+}
+function hideLocMap(){
+  formLat=null; formLon=null;
+  el("loc-map").style.display="none"; el("loc-map-frame").src="";
+  el("loc-map-link").style.display="none"; el("loc-map-link").href="#";
+}
+// 履歴の記録から地図をポップアップ表示
+function openMapLightbox(lat,lon){
+  const dLon=0.012, dLat=0.009;
+  el("map-lightbox-frame").src=`https://www.openstreetmap.org/export/embed.html?bbox=${lon-dLon}%2C${lat-dLat}%2C${lon+dLon}%2C${lat+dLat}&marker=${lat}%2C${lon}`;
+  el("map-lightbox").classList.add("on");
+}
+function closeMapLightbox(){ el("map-lightbox").classList.remove("on"); el("map-lightbox-frame").src=""; }
 
 // 釣行時間帯 {start,end}（分）。未入力ならnull。
 function tripSpan(){
@@ -831,9 +865,11 @@ function addFishRow(name="",size="",photo="",tmin=null){
     if(meta.lat!=null && meta.lon!=null){
       const lockedLoc = userEditedLoc || photoLocLocked;
       if(lockedLoc){
+        if(formLat==null) showLocMap(meta.lat, meta.lon); // 場所名は手入力を尊重しつつ、ピンはまだ無ければ立てる
         hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>写真を追加しました</span>`;
         return;
       }
+      showLocMap(meta.lat, meta.lon);
       let placeName=await reverseGeocodeName(meta.lat, meta.lon);
       if(placeName) el("f-loc").value=placeName;
       photoLocLocked=true;
@@ -1026,6 +1062,7 @@ function resetForm(){
   el("fish-list").innerHTML=""; addFishRow();
   userEditedDate=false; userEditedLoc=false; // 写真の自動反映を再び許可
   photoDateLocked=false; photoLocLocked=false; // 写真FIXを解除（新しい釣行）
+  hideLocMap();
   editingId=null; editingCreatedAt=null; setEditingUI(false); // 編集モード解除
   refreshTide();
 }
@@ -1050,6 +1087,7 @@ async function saveTrip(){
     end: span?span.end:null,       // 釣行 終了（分・手動）
     time: el("f-start").value||"", // 互換: 一覧表示用に開始時刻文字列も保持
     loc,
+    lat: formLat, lon: formLon,    // 写真GPSの座標（地図ピン用）
     pc: currentPort ? currentPort.pc : null, hc: currentPort ? currentPort.hc : null,
     tide: currentTide && currentTide.date===dateStr ? currentTide : null, // 潮汐スナップショット
     tideType: currentTide ? currentTide.tideType : "",
@@ -1107,7 +1145,7 @@ async function renderHistory(){
       <div class="top">
         <div>
           <div class="dt">${esc(r.date)} ${timeStr}</div>
-          <div class="loc">📍 ${esc(r.loc||"場所未記入")}</div>
+          <div class="loc">📍 ${esc(r.loc||"場所未記入")}${r.lat!=null&&r.lon!=null?`<span class="map-btn">🗺 地図</span>`:""}</div>
         </div>
         <span class="${badgeClass(r.tideType)}">${esc(r.tideType||"—")}</span>
       </div>
@@ -1129,6 +1167,8 @@ async function renderHistory(){
       drawTide(mc, r.tide, histSpan, histMarks);
     }
     div.querySelectorAll(".zoom").forEach(im=>im.onclick=()=>openLightbox(im.src));
+    const mapBtn=div.querySelector(".map-btn");
+    if(mapBtn) mapBtn.onclick=()=>openMapLightbox(r.lat, r.lon);
     div.querySelector(".del").onclick=async ()=>{ if(confirm("この記録を削除しますか？")){ await dbDeleteRecord(r.id); await renderHistory(); toast("削除しました"); } };
     div.querySelector(".edit").onclick=()=>startEdit(r);
     div.querySelector(".dup").onclick=()=>{
@@ -1137,6 +1177,7 @@ async function renderHistory(){
       el("f-loc").value=r.loc||""; el("f-tackle").value=r.tackle||"";
       userEditedLoc=!!r.loc; userEditedDate=false; // 引き継いだ場所は尊重
       photoDateLocked=false; photoLocLocked=!!r.loc;
+      if(r.lat!=null && r.lon!=null) showLocMap(r.lat, r.lon); else hideLocMap();
       el("fish-list").innerHTML=""; (r.fish.length?r.fish:[{}]).forEach(f=>addFishRow(f.name,f.size)); // 写真は引き継がない
       switchView("log"); refreshTide(); toast("場所・タックルを引き継ぎました");
     };
@@ -1155,6 +1196,7 @@ async function startEdit(r){
   // 手入力済み扱い（写真の自動反映で勝手に上書きしない）
   userEditedDate=true; userEditedLoc=!!r.loc;
   photoDateLocked=true; photoLocLocked=!!r.loc; // 既存記録：写真追加で日時・場所を変えない
+  if(r.lat!=null && r.lon!=null) showLocMap(r.lat, r.lon); else hideLocMap();
   // 魚の行（写真Blobはフォーム用にdataURLへ）
   el("fish-list").innerHTML="";
   const fishArr = r.fish && r.fish.length ? r.fish : [{}];
@@ -1283,6 +1325,7 @@ async function init(){
   el("clear-btn").onclick=async ()=>{ if(confirm("本当にすべての釣行記録を削除しますか？この操作は元に戻せません。")){ await dbClearRecords(); await renderHistory(); toast("全データを削除しました"); } };
   document.querySelectorAll(".tabbar button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   el("lightbox").onclick=closeLightbox;
+  el("map-lightbox").onclick=closeMapLightbox;
   window.addEventListener("resize", ()=>{ if(currentTide && el("view-log").classList.contains("on")) drawTide(el("tide-canvas"), currentTide, tripSpan(), collectFishMarks()); });
 
   refreshTide(); // 起動時は場所未入力 → 案内表示
