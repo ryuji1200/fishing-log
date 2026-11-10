@@ -149,6 +149,25 @@
   .diag-rows .yes{color:var(--accent2); font-weight:700;}
   .diag-rows .no{color:var(--danger); font-weight:700;}
   .diag-verdict{font-size:14px; font-weight:700; padding:12px; border-radius:10px; text-align:center; margin-top:12px; line-height:1.6;}
+  .wx{font-size:12px; color:var(--sub); margin-top:10px; line-height:1.6;}
+  .wx:empty{display:none;}
+  .filters{display:flex; gap:8px; margin-bottom:8px;}
+  .filters select{padding:9px 8px; font-size:13px; min-width:0; flex:1;}
+  .filter-count{font-size:12px; color:var(--sub); margin:0 0 10px 2px;}
+  .bars .br{display:grid; grid-template-columns:5.2em minmax(0,1fr); gap:8px; align-items:start; margin-bottom:10px; font-size:13px;}
+  .bars .lb{color:var(--txt); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .bars .br.stack{grid-template-columns:minmax(0,1fr); gap:3px;}
+  .bars .br.stack .lb{white-space:normal; overflow-wrap:anywhere;}
+  .bars .bw{display:flex; align-items:center; gap:7px; min-width:0;}
+  .bars .bar{flex:0 0 auto; height:10px; min-width:2px; border-radius:0 4px 4px 0; background:var(--accent);}
+  .bars .val{color:var(--txt); white-space:nowrap; font-variant-numeric:tabular-nums;}
+  .bars .val small{color:var(--sub); font-size:11px;}
+  .bars .sb{color:var(--sub); font-size:11px; margin-top:2px;}
+  .sp-rows .r{padding:8px 0; border-bottom:1px solid #1d4d7755; font-size:14px;}
+  .sp-rows .r:last-child{border-bottom:none;}
+  .sp-rows .h{display:flex; justify-content:space-between; gap:10px;}
+  .sp-rows .h .nm{font-weight:700; color:var(--gold);}
+  .sp-rows .sub{font-size:12px; color:var(--sub); margin-top:2px;}
 </style>
 </head>
 <body>
@@ -158,6 +177,13 @@
 </header>
 
 <main>
+  <div id="backup-banner" class="edit-banner" style="display:none;">
+    <span id="backup-banner-text"></span>
+    <span style="display:flex; gap:6px; flex:0 0 auto;">
+      <button id="backup-now" type="button">書き出す</button>
+      <button id="backup-later" type="button">あとで</button>
+    </span>
+  </div>
   <!-- ========== 記録タブ ========== -->
   <section id="view-log" class="view on">
     <div id="edit-banner" class="edit-banner" style="display:none;">
@@ -186,8 +212,10 @@
         <input type="text" id="f-loc" placeholder="例：豊洲ぐるり公園 / 横浜港 / 〇〇漁港" list="loc-list" autocomplete="off">
         <datalist id="loc-list"></datalist>
         <div class="chips" id="loc-chips"></div>
+        <button type="button" class="btn ghost sm" id="use-gps" style="width:100%; margin-top:8px;">📍 現在地を使う</button>
         <div class="note" id="port-info" style="margin-top:8px;">釣果写真を選ぶと、撮影日時・場所・潮汐を自動で読み取ります。場所の手入力でもOK。</div>
-        <div class="loc-map" id="loc-map" style="display:none;"><iframe id="loc-map-frame" src="" title="撮影場所の地図"></iframe></div>
+        <div class="loc-map" id="loc-map" style="display:none;"><iframe id="loc-map-frame" src="" title="釣り場の地図"></iframe></div>
+        <div class="note" id="loc-map-note" style="display:none;"></div>
         <a href="#" id="loc-map-link" class="map-link" style="display:none;" target="_blank" rel="noopener">🗺 大きな地図で見る</a>
       </div>
     </div>
@@ -205,6 +233,7 @@
       <canvas id="tide-canvas" height="200" style="display:none;"></canvas>
       <div class="sunmoon" id="sunmoon"></div>
       <div class="extrema" id="extrema"></div>
+      <div class="wx" id="wx-info"></div>
       <div class="note" id="tide-source"></div>
     </div>
 
@@ -224,7 +253,7 @@
       </div>
       <div class="field" style="margin-bottom:0;">
         <label>メモ</label>
-        <textarea id="f-memo" placeholder="天気・風・水温・当たった時間帯・反省点など"></textarea>
+        <textarea id="f-memo" placeholder="当たった時間帯・ヒットルアー・反省点など"></textarea>
       </div>
     </div>
 
@@ -239,7 +268,30 @@
       <div class="s"><div class="n" id="st-fish">0</div><div class="t">釣れた魚（匹）</div></div>
       <div class="s"><div class="n" id="st-species">0</div><div class="t">魚種</div></div>
     </div>
+    <div id="hist-filters" style="display:none;">
+      <div class="filters">
+        <select id="flt-sp" aria-label="魚種で絞り込み"></select>
+        <select id="flt-loc" aria-label="場所で絞り込み"></select>
+        <select id="flt-per" aria-label="期間で絞り込み"></select>
+      </div>
+      <div class="filter-count" id="flt-count"></div>
+    </div>
     <div id="rec-list"></div>
+  </section>
+
+  <!-- ========== 分析タブ ========== -->
+  <section id="view-stats" class="view">
+    <div id="stats-empty" class="empty" style="display:none;">まだ分析できる記録がありません。<br>釣行を記録すると、釣れた条件がここに集計されます。</div>
+    <div id="stats-body" style="display:none;">
+      <div class="filters"><select id="stats-sp" aria-label="魚種で絞り込み"></select></div>
+      <div class="note" id="stats-note" style="margin:0 2px 12px;"></div>
+      <div class="card"><p class="sec-title">🏆 魚種別の記録</p><div class="sp-rows" id="stats-species"></div></div>
+      <div class="card"><p class="sec-title">🌕 潮回り別（1回の釣行あたり）</p><div class="bars" id="stats-tide"></div><div class="note" id="stats-tide-note"></div></div>
+      <div class="card"><p class="sec-title">🌊 潮の動き別</p><div class="bars" id="stats-phase"></div><div class="note" id="stats-phase-note"></div></div>
+      <div class="card"><p class="sec-title">🕒 時間帯別</p><div class="bars" id="stats-hour"></div><div class="note" id="stats-hour-note"></div></div>
+      <div class="card"><p class="sec-title">📅 月別</p><div class="bars" id="stats-month"></div></div>
+      <div class="card"><p class="sec-title">📍 場所別（1回の釣行あたり）</p><div class="bars" id="stats-loc"></div></div>
+    </div>
   </section>
 
   <!-- ========== 設定タブ ========== -->
@@ -252,6 +304,14 @@
         データを読み込む
         <input type="file" id="import-file" accept="application/json,.json" class="vhide">
       </label>
+      <div class="diag-rows" id="backup-info"></div>
+    </div>
+    <div class="card">
+      <p class="sec-title">天気データについて</p>
+      <div class="note" style="margin-top:0;">
+        天気・気温・風・気圧・水温は <b>Open-Meteo</b>（open-meteo.com）から取得しています。釣り場の座標と日付がわかる記録に自動で付き、過去の記録にも履歴タブを開いたときに後から付きます。取得には<b>通信が必要</b>です。<br><br>
+        ※ 値は気象モデルの推定で、実際の釣り場とずれることがあります。特に水温は沖側の海域の推定値なので、岸近くや湾の奥では目安として見てください。
+      </div>
     </div>
     <div class="card">
       <p class="sec-title">潮汐データについて</p>
@@ -286,6 +346,7 @@
 <nav class="tabbar">
   <button data-view="log" class="on"><span class="ic">📝</span>記録</button>
   <button data-view="history"><span class="ic">📚</span>履歴</button>
+  <button data-view="stats"><span class="ic">📊</span>分析</button>
   <button data-view="settings"><span class="ic">⚙️</span>設定</button>
 </nav>
 
@@ -352,6 +413,47 @@ function dbGetAllRecords(){
 function dbPutRecord(rec){ return idbTx("readwrite",store=>store.put(rec)); }
 function dbDeleteRecord(id){ return idbTx("readwrite",store=>store.delete(id)); }
 function dbClearRecords(){ return idbTx("readwrite",store=>store.clear()); }
+function idbReq(q){ return new Promise((res,rej)=>{ q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
+function dbGetRecord(id){ return idbTx("readonly",store=>idbReq(store.get(id))); }
+function dbCountRecords(){ return idbTx("readonly",store=>idbReq(store.count())); }
+
+/* ---- バックアップの催促 ---- */
+const LAST_EXPORT_KEY="fishing-log-last-export", LAST_CHANGE_KEY="fishing-log-last-change", BACKUP_SNOOZE_KEY="fishing-log-backup-snooze";
+const DAY_MS=86400000;
+function lsNum(k){ try{ return +localStorage.getItem(k)||0; }catch(e){ return 0; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,String(v)); }catch(e){} }
+function markChanged(){ lsSet(LAST_CHANGE_KEY, Date.now()); updateBackupBanner(); }
+async function updateBackupBanner(){
+  const b=el("backup-banner");
+  let n=0; try{ n=await dbCountRecords(); }catch(e){}
+  const now=Date.now(), lastExp=lsNum(LAST_EXPORT_KEY);
+  let lastChg=lsNum(LAST_CHANGE_KEY);
+  if(!lastChg && n){ lastChg=now; lsSet(LAST_CHANGE_KEY, now); } // この機能より前からある記録は「未書き出し」として扱う
+  const due = lastExp ? (now-lastExp > 30*DAY_MS) : n>=3;
+  if(!n || lastChg<=lastExp || !due || now<lsNum(BACKUP_SNOOZE_KEY)){ b.style.display="none"; return; }
+  el("backup-banner-text").textContent = lastExp
+    ? `💾 最後の書き出しから${Math.floor((now-lastExp)/DAY_MS)}日たちました。記録はこの端末の中にしかありません。`
+    : `💾 まだ一度も書き出していません（記録${n}件）。記録はこの端末の中にしかありません。`;
+  b.style.display="flex";
+}
+// ブラウザが容量不足のときに勝手にデータを消さないよう保護を依頼（許可されるかはブラウザ次第）
+function requestPersist(){ try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){} }
+async function renderBackupInfo(){
+  const lastExp=lsNum(LAST_EXPORT_KEY);
+  const rows=[`<div class="r"><span class="k">最後の書き出し</span><span>${lastExp?`${ymd(new Date(lastExp))}（${Math.floor((Date.now()-lastExp)/DAY_MS)}日前）`:"まだありません"}</span></div>`];
+  try{
+    if(navigator.storage && navigator.storage.persisted){
+      const p=await navigator.storage.persisted();
+      rows.push(`<div class="r"><span class="k">自動削除からの保護</span><span>${p?'<span class="yes">有効</span>':"未設定"}</span></div>`);
+    }
+    if(navigator.storage && navigator.storage.estimate){
+      const e=await navigator.storage.estimate();
+      if(e && e.usage!=null) rows.push(`<div class="r"><span class="k">使用中の容量</span><span>${(e.usage/1024/1024).toFixed(1)} MB</span></div>`);
+    }
+  }catch(e){}
+  el("backup-info").innerHTML=rows.join("");
+}
+function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 
 /* ---- 画像変換ヘルパー（Blob ⇔ dataURL） ---- */
 function dataURLtoBlob(dataURL){ return fetch(dataURL).then(r=>r.blob()); }
@@ -652,23 +754,172 @@ let userEditedDate=false, userEditedLoc=false;
 let photoDateLocked=false, photoLocLocked=false;
 // 既存記録の編集中フラグ（null=新規作成）
 let editingId=null, editingCreatedAt=null;
-// 写真のGPSから確定した座標（地図ピン用）
-let formLat=null, formLon=null;
+// 釣り場の座標（地図ピン・天気用）。出どころ: "photo"=写真のGPS / "gps"=現在地 / "place"=場所名から求めた目安
+let formLat=null, formLon=null, formGeoSrc=null;
+const isExactGeo=src=>src==="photo"||src==="gps";
 
-// 撮影場所の地図（ピン付き）を場所カードに表示
-function showLocMap(lat,lon){
-  formLat=lat; formLon=lon;
+// 釣り場の地図（ピン付き）を場所カードに表示
+function showLocMap(lat,lon,src){
+  formLat=lat; formLon=lon; formGeoSrc=src||"photo";
   const dLon=0.012, dLat=0.009;
-  el("loc-map-frame").src=`https://www.openstreetmap.org/export/embed.html?bbox=${lon-dLon}%2C${lat-dLat}%2C${lon+dLon}%2C${lat+dLat}&marker=${lat}%2C${lon}`;
+  const url=`https://www.openstreetmap.org/export/embed.html?bbox=${lon-dLon}%2C${lat-dLat}%2C${lon+dLon}%2C${lat+dLat}&marker=${lat}%2C${lon}`;
+  const fr=el("loc-map-frame");
+  if(fr.getAttribute("src")!==url) fr.src=url; // 同じ場所なら読み込み直さない
   el("loc-map").style.display="block";
+  const note=el("loc-map-note");
+  note.textContent = formGeoSrc==="place" ? "📍 場所名から求めた目安の位置です（写真の位置情報か「現在地を使う」で正確になります）" : "";
+  note.style.display = formGeoSrc==="place" ? "block" : "none";
   const link=el("loc-map-link");
   link.href=`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
   link.style.display="inline-block";
+  refreshWx();
 }
 function hideLocMap(){
-  formLat=null; formLon=null;
+  formLat=null; formLon=null; formGeoSrc=null;
   el("loc-map").style.display="none"; el("loc-map-frame").src="";
+  el("loc-map-note").style.display="none";
   el("loc-map-link").style.display="none"; el("loc-map-link").href="#";
+  refreshWx();
+}
+// 「現在地を使う」：スマホのGPSでピンを立てる（写真に位置情報が無いとき用）
+function useCurrentLocation(){
+  if(!navigator.geolocation){ toast("この端末では現在地を取得できません"); return; }
+  const btn=el("use-gps"); btn.disabled=true; btn.textContent="📍 現在地を取得中…";
+  const done=()=>{ btn.disabled=false; btn.textContent="📍 現在地を使う"; };
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    done();
+    const lat=pos.coords.latitude, lon=pos.coords.longitude;
+    showLocMap(lat, lon, "gps");
+    photoLocLocked=true; // 後から入れた写真で場所を上書きしない
+    if(!el("f-loc").value.trim()){
+      const name=await reverseGeocodeName(lat, lon);
+      if(name && !el("f-loc").value.trim()) el("f-loc").value=name;
+    }
+    refreshTide({lat, lon});
+    toast("現在地を設定しました");
+  }, err=>{
+    done();
+    toast(err && err.code===1 ? "位置情報の利用が許可されていません" : "現在地を取得できませんでした");
+  }, {enableHighAccuracy:true, timeout:15000, maximumAge:60000});
+}
+
+/* ===================== 天気（Open-Meteo） ===================== */
+const WX_CACHE_PREFIX="wx-cache:";
+const _wxMem={};
+const wxKey=(lat,lon,dateStr)=>`${lat.toFixed(2)},${lon.toFixed(2)}:${dateStr}`;
+function dayDiffFromToday(dateStr){
+  const [y,m,d]=dateStr.split("-").map(Number);
+  const t=new Date();
+  return Math.round((new Date(y,m-1,d)-new Date(t.getFullYear(),t.getMonth(),t.getDate()))/DAY_MS);
+}
+// その日の1時間ごとの天気（24個ずつの配列）。予報の届かない先の日付は null。
+async function getWeatherDay(lat, lon, dateStr){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(dateStr||"")) return null;
+  const k=wxKey(lat,lon,dateStr);
+  if(_wxMem[k]) return _wxMem[k];
+  try{ const c=localStorage.getItem(WX_CACHE_PREFIX+k); if(c){ return (_wxMem[k]=JSON.parse(c)); } }catch(e){}
+  if(dayDiffFromToday(dateStr)>14) return null;
+  if(!_wxPending[k]) _wxPending[k]=fetchWeatherDay(lat, lon, dateStr, k).finally(()=>{ delete _wxPending[k]; }); // 同じ日の同時取得は1回にまとめる
+  return _wxPending[k];
+}
+const _wxPending={};
+async function fetchWeatherDay(lat, lon, dateStr, k){
+  const diff=dayDiffFromToday(dateStr);
+  const q=`latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&timezone=auto&start_date=${dateStr}&end_date=${dateStr}`;
+  const hourly="hourly=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,precipitation,pressure_msl&wind_speed_unit=ms";
+  const forecast=`https://api.open-meteo.com/v1/forecast?${q}&${hourly}`;
+  const archive=`https://archive-api.open-meteo.com/v1/archive?${q}&${hourly}`;
+  // 直近は予報API、古い日付は過去データAPI（予報APIは約3か月前までしか持っていない）
+  const urls = diff>=-85 ? [forecast, archive] : [archive, forecast];
+  let h=null;
+  for(const u of urls){
+    try{
+      const j=JSON.parse(await fetchText(u, {timeout:8000}));
+      if(j.hourly && Array.isArray(j.hourly.temperature_2m) && j.hourly.temperature_2m.some(v=>v!=null)){ h=j.hourly; break; }
+    }catch(e){ /* 次へ */ }
+  }
+  if(!h) throw new Error("天気を取得できませんでした");
+  let sst=null;
+  try{
+    const j=JSON.parse(await fetchText(`https://marine-api.open-meteo.com/v1/marine?${q}&hourly=sea_surface_temperature`, {timeout:8000}));
+    const a=j.hourly && j.hourly.sea_surface_temperature;
+    if(Array.isArray(a) && a.some(v=>v!=null)) sst=a;
+  }catch(e){ /* 水温は取れなくても続行 */ }
+  const day={k, temp:h.temperature_2m, code:h.weather_code, wind:h.wind_speed_10m, dir:h.wind_direction_10m, rain:h.precipitation, pres:h.pressure_msl, sst};
+  _wxMem[k]=day;
+  if(diff<=-2){ try{ localStorage.setItem(WX_CACHE_PREFIX+k, JSON.stringify(day)); }catch(e){} } // 確定した過去日だけ端末に保存
+  return day;
+}
+// 代表時刻（分）：釣行時間の真ん中 → 開始/終了 → 釣れた時刻の中央 → 正午
+function repMinute(span, marks){
+  if(span){
+    if(span.start!=null && span.end!=null && span.end>=span.start) return Math.round((span.start+span.end)/2);
+    if(span.start!=null) return span.start;
+    if(span.end!=null) return span.end;
+  }
+  const ms=(marks||[]).filter(m=>m!=null).sort((a,b)=>a-b);
+  return ms.length ? ms[Math.floor(ms.length/2)] : 720;
+}
+// 記録に残す天気（代表時刻の1時間ぶん）
+function weatherAt(day, minute){
+  const i=Math.max(0, Math.min(23, Math.floor(minute/60)));
+  const r1=v=>v==null?null:Math.round(v*10)/10;
+  const at=a=>(a && a[i]!=null) ? a[i] : null;
+  return {k:day.k, h:i, code:at(day.code), temp:r1(at(day.temp)), wind:r1(at(day.wind)), dir:at(day.dir),
+          rain:r1(at(day.rain)), pres:at(day.pres)==null?null:Math.round(at(day.pres)), sst:r1(at(day.sst))};
+}
+function wxText(code){
+  const c=+code;
+  if(c===0) return ["☀️","快晴"]; if(c===1) return ["🌤","晴れ"]; if(c===2) return ["⛅","晴れ時々曇り"]; if(c===3) return ["☁️","曇り"];
+  if(c===45||c===48) return ["🌫","霧"];
+  if(c>=51&&c<=57) return ["🌦","霧雨"];
+  if(c===61) return ["🌧","弱い雨"]; if(c===63) return ["🌧","雨"]; if(c===65) return ["🌧","強い雨"]; if(c===66||c===67) return ["🌧","冷たい雨"];
+  if(c>=71&&c<=77) return ["🌨","雪"];
+  if(c>=80&&c<=82) return ["🌦","にわか雨"]; if(c===85||c===86) return ["🌨","にわか雪"];
+  if(c>=95) return ["⛈","雷雨"];
+  return ["🌡","天気不明"];
+}
+const WIND_DIRS=["北","北北東","北東","東北東","東","東南東","南東","南南東","南","南南西","南西","西南西","西","西北西","北西","北北西"];
+function windDirName(deg){ return deg==null||isNaN(+deg) ? "" : WIND_DIRS[Math.round((+deg)/22.5)%16]; }
+function fmtWeather(w){
+  if(!w) return "";
+  const parts=[];
+  if(w.code!=null){ const [ic,tx]=wxText(w.code); parts.push(`${ic} ${tx}`); }
+  if(w.temp!=null) parts.push(`${esc(w.temp)}℃`);
+  if(w.wind!=null) parts.push(`風 ${windDirName(w.dir)} ${esc(w.wind)}m/s`);
+  if(+w.rain>0) parts.push(`雨 ${esc(w.rain)}mm/時`);
+  if(w.pres!=null) parts.push(`${esc(w.pres)}hPa`);
+  if(w.sst!=null) parts.push(`水温 ${esc(w.sst)}℃`);
+  return parts.join(" ／ ")+(w.h!=null?`（${esc(w.h)}時ごろ）`:"");
+}
+// 記録タブの天気表示
+let currentWxDay=null, wxReqToken=0;
+function formRepMinute(){
+  const span=tripSpan(), marks=collectFishMarks().map(x=>x.m);
+  if(!span && !marks.length && el("f-date").value===ymd(new Date())){ const n=new Date(); return n.getHours()*60+n.getMinutes(); } // 今日で時刻未入力なら今の時刻
+  return repMinute(span, marks);
+}
+function renderWx(){
+  const box=el("wx-info");
+  if(!currentWxDay){ return; }
+  box.innerHTML=fmtWeather(weatherAt(currentWxDay, formRepMinute()));
+}
+async function refreshWx(){
+  const box=el("wx-info"), dateStr=el("f-date").value;
+  const token=++wxReqToken;
+  currentWxDay=null;
+  if(formLat==null || formLon==null || !dateStr){ box.textContent=""; return; }
+  const lat=formLat, lon=formLon;
+  box.innerHTML='<span class="spinner" style="width:12px;height:12px"></span>天気を取得中…';
+  try{
+    const day=await getWeatherDay(lat, lon, dateStr);
+    if(token!==wxReqToken) return;
+    currentWxDay=day;
+    if(day) renderWx(); else box.textContent="";
+  }catch(e){
+    if(token!==wxReqToken) return;
+    box.textContent="天気を取得できませんでした（保存後、通信できるときに自動で付きます）";
+  }
 }
 // 履歴の記録から地図をポップアップ表示
 function openMapLightbox(lat,lon){
@@ -715,6 +966,8 @@ async function refreshTide(coords){
   const place=el("f-loc").value.trim();
   if(!dateStr) return;
   const token=++tideReqToken;
+  if(!place && formGeoSrc==="place") hideLocMap();                         // 場所名を消したら、場所名由来のピンも消す
+  if(!place && !coords && formLat!=null) coords={lat:formLat, lon:formLon}; // 場所名が空でもピンがあれば、その座標で潮汐を出す
 
   if(!place && !coords){
     currentTide=null; currentPort=null;
@@ -732,6 +985,7 @@ async function refreshTide(coords){
   el("tide-canvas").style.display="none"; el("sunmoon").innerHTML=""; el("extrema").innerHTML=""; el("tide-source").textContent="";
   setPortInfo('<span class="spinner"></span>最寄りの基準港を判定中…');
 
+  let geoFound=false;
   try{
     let pc, lat, lon;
     if(coords){
@@ -742,7 +996,8 @@ async function refreshTide(coords){
     }else{
       const geo=await geocode(place);
       if(token!==tideReqToken) return;
-      pc=geo.pc; lat=geo.lat; lon=geo.lon;
+      pc=geo.pc; lat=geo.lat; lon=geo.lon; geoFound=true;
+      if(!isExactGeo(formGeoSrc)) showLocMap(lat, lon, "place"); // 写真・現在地のピンが無ければ、場所名の位置にピンを立てる
     }
     const harbor=await nearestHarbor(pc, lat, lon);
     if(token!==tideReqToken) return;
@@ -756,6 +1011,7 @@ async function refreshTide(coords){
   }catch(e){
     if(token!==tideReqToken) return;
     currentTide=null; currentPort=null;
+    if(!coords && !geoFound && formGeoSrc==="place") hideLocMap(); // 場所が見つからないのに前のピンを残さない
     el("tide-type").textContent="—"; el("moon-info").textContent="";
     el("tide-badge").className="badge b-other"; el("tide-badge").textContent="潮回り";
     el("tide-canvas").style.display="none";
@@ -856,8 +1112,10 @@ function addFishRow(name="",size="",photo="",tmin=null){
       row.dataset.tmin = parseHM(meta.time);   // この魚の釣れた時刻（潮汐グラフのマーク用）
       const lockedDate = userEditedDate || photoDateLocked;
       if(!lockedDate){
+        const dateChanged = el("f-date").value!==meta.date;
         el("f-date").value=meta.date;          // 日付のみ自動。釣行の開始/終了時間は手動入力。
         photoDateLocked=true;
+        if(dateChanged) refreshWx();
       }
       msgs.push(`🕒 ${meta.date} ${meta.time}`);
       redrawTideMarks();                       // 釣れた時刻のマークを更新
@@ -866,11 +1124,11 @@ function addFishRow(name="",size="",photo="",tmin=null){
     if(meta.lat!=null && meta.lon!=null){
       const lockedLoc = userEditedLoc || photoLocLocked;
       if(lockedLoc){
-        if(formLat==null) showLocMap(meta.lat, meta.lon); // 場所名は手入力を尊重しつつ、ピンはまだ無ければ立てる
+        if(!isExactGeo(formGeoSrc)) showLocMap(meta.lat, meta.lon, "photo"); // 場所名は手入力を尊重しつつ、正確なピンがまだ無ければ写真の位置に立てる
         hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>写真を追加しました</span>`;
         return;
       }
-      showLocMap(meta.lat, meta.lon);
+      showLocMap(meta.lat, meta.lon, "photo");
       let placeName=await reverseGeocodeName(meta.lat, meta.lon);
       if(placeName) el("f-loc").value=placeName;
       photoLocLocked=true;
@@ -906,6 +1164,7 @@ function redrawTideMarks(){
   if(currentTide && el("view-log").classList.contains("on")){
     drawTide(el("tide-canvas"), currentTide, tripSpan(), collectFishMarks());
   }
+  renderWx();
 }
 function fmtMinHM(m){ return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0"); }
 // 釣果（魚）の時刻の最小・最大で、釣行 開始・終了を埋める
@@ -1055,8 +1314,7 @@ async function runPhotoDiag(file){
 }
 
 function resetForm(){
-  const now=new Date();
-  el("f-date").value=now.toISOString().slice(0,10);
+  el("f-date").value=ymd(new Date());
   el("f-start").value=""; el("f-end").value="";
   el("f-loc").value="";
   el("f-tackle").value="";
@@ -1065,9 +1323,11 @@ function resetForm(){
   userEditedDate=false; userEditedLoc=false; // 写真の自動反映を再び許可
   photoDateLocked=false; photoLocLocked=false; // 写真FIXを解除（新しい釣行）
   hideLocMap();
-  editingId=null; editingCreatedAt=null; setEditingUI(false); // 編集モード解除
+  editingId=null; editingCreatedAt=null; editingWeather=null; setEditingUI(false); // 編集モード解除
   refreshTide();
 }
+let editingWeather=null; // 編集中の記録に付いていた天気（取り直せないときに残す）
+function withTimeout(p, ms){ return Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")), ms))]); }
 
 async function saveTrip(){
   const dateStr=el("f-date").value;
@@ -1082,6 +1342,16 @@ async function saveTrip(){
   }
   const editing = !!editingId;
   const span=tripSpan();
+  // 天気：座標があれば代表時刻の値を記録に残す。取れなければ後で履歴タブを開いたときに付け直す。
+  let weather=null;
+  if(formLat!=null && formLon!=null){
+    const k=wxKey(formLat, formLon, dateStr);
+    try{
+      const day = (currentWxDay && currentWxDay.k===k) ? currentWxDay : await withTimeout(getWeatherDay(formLat, formLon, dateStr), 5000);
+      if(day) weather=weatherAt(day, formRepMinute());
+    }catch(e){ /* 圏外など */ }
+    if(!weather && editingWeather && editingWeather.k===k) weather=editingWeather;
+  }
   const rec={
     id: editing ? editingId : (Date.now().toString(36)+Math.random().toString(36).slice(2,6)),
     date: dateStr,
@@ -1089,7 +1359,8 @@ async function saveTrip(){
     end: span?span.end:null,       // 釣行 終了（分・手動）
     time: el("f-start").value||"", // 互換: 一覧表示用に開始時刻文字列も保持
     loc,
-    lat: formLat, lon: formLon,    // 写真GPSの座標（地図ピン用）
+    lat: formLat, lon: formLon, geoSrc: formGeoSrc, // 釣り場の座標と出どころ（地図ピン・天気用）
+    weather,
     pc: currentPort ? currentPort.pc : null, hc: currentPort ? currentPort.hc : null,
     tide: currentTide && currentTide.date===dateStr ? currentTide : null, // 潮汐スナップショット
     tideType: currentTide ? currentTide.tideType : "",
@@ -1106,6 +1377,7 @@ async function saveTrip(){
     return;
   }
   if(loc){ const ls=loadLocs(); if(!ls.includes(loc)){ ls.unshift(loc); saveLocs(ls.slice(0,20)); buildLocUI(); } }
+  markChanged(); requestPersist();
   toast(editing ? "変更を保存しました ✏️" : "保存しました 🎣");
   resetForm();
   await renderHistory();
@@ -1121,17 +1393,56 @@ function photoURL(p){ // BlobならObjectURL、文字列(dataURL)ならそのま
   const u=URL.createObjectURL(p); _photoURLs.push(u); return u;
 }
 
+// 絞り込み（履歴タブ）
+const histFilter={sp:"", loc:"", per:""};
+const isFish=f=>!!(f && (f.name||f.size||f.photo));
+const fishName=f=>String((f&&f.name)||"").trim();
+function setOptions(sel, opts, cur){ // opts: [[value,label],...]。選択中の値が無くなっていたら先頭に戻す
+  sel.innerHTML=opts.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join("");
+  sel.value = opts.some(([v])=>v===cur) ? cur : "";
+  return sel.value;
+}
+function uniqSorted(arr){ return Array.from(new Set(arr.filter(Boolean))).sort((a,b)=>a.localeCompare(b,"ja")); }
+function periodMatch(dateStr, per){
+  if(!per) return true;
+  if(!dateStr) return false;
+  if(per[0]==="y") return dateStr.slice(0,4)===per.slice(1);
+  return dateStr >= ymd(new Date(Date.now()-(+per)*DAY_MS));
+}
+
 async function renderHistory(){
-  const recs=await dbGetAllRecords();
+  const all=await dbGetAllRecords();
   const list=el("rec-list");
   revokePhotoURLs();
+  all.forEach(r=>{ if(!Array.isArray(r.fish)) r.fish=[]; });
+
+  // 絞り込みの選択肢を、今ある記録から作り直す
+  el("hist-filters").style.display = all.length ? "block" : "none";
+  const spList=uniqSorted(all.flatMap(r=>r.fish.map(fishName)));
+  const locList=uniqSorted(all.map(r=>(r.loc||"").trim()));
+  const years=Array.from(new Set(all.map(r=>(r.date||"").slice(0,4)).filter(y=>/^\d{4}$/.test(y)))).sort().reverse();
+  histFilter.sp =setOptions(el("flt-sp"),  [["","すべての魚種"], ...spList.map(s=>[s,s])], histFilter.sp);
+  histFilter.loc=setOptions(el("flt-loc"), [["","すべての場所"], ...locList.map(s=>[s,s])], histFilter.loc);
+  histFilter.per=setOptions(el("flt-per"), [["","全期間"],["30","直近30日"],["90","直近90日"], ...years.map(y=>["y"+y, y+"年"])], histFilter.per);
+  const filtering = !!(histFilter.sp||histFilter.loc||histFilter.per);
+  const recs=all.filter(r=>
+    (!histFilter.sp  || r.fish.some(f=>fishName(f)===histFilter.sp)) &&
+    (!histFilter.loc || (r.loc||"").trim()===histFilter.loc) &&
+    periodMatch(r.date, histFilter.per));
+  el("flt-count").textContent = filtering ? `${all.length}件中 ${recs.length}件を表示` : "";
+
+  // 上の数字は、絞り込んだ結果を数える（魚種を選んだときはその魚だけ）
   let fishCnt=0; const species=new Set();
-  recs.forEach(r=>(r.fish||[]).forEach(f=>{ if(f.name||f.size||f.photo) fishCnt++; if(f.name)species.add(f.name); }));
+  recs.forEach(r=>r.fish.forEach(f=>{
+    if(!isFish(f) || (histFilter.sp && fishName(f)!==histFilter.sp)) return;
+    fishCnt++; if(fishName(f)) species.add(fishName(f));
+  }));
   el("st-trips").textContent=recs.length;
   el("st-fish").textContent=fishCnt;
   el("st-species").textContent=species.size;
 
-  if(!recs.length){ list.innerHTML=`<div class="empty">まだ釣行記録がありません。<br>「記録」タブから最初の一匹を記録しましょう！🎣</div>`; return; }
+  if(!all.length){ list.innerHTML=`<div class="empty">まだ釣行記録がありません。<br>「記録」タブから最初の一匹を記録しましょう！🎣</div>`; return; }
+  if(!recs.length){ list.innerHTML=`<div class="empty">条件に合う記録がありません。</div>`; return; }
   list.innerHTML="";
   recs.forEach(r=>{
     const div=document.createElement("div"); div.className="rec";
@@ -1147,13 +1458,14 @@ async function renderHistory(){
       <div class="top">
         <div>
           <div class="dt">${esc(r.date)} ${timeStr}</div>
-          <div class="loc">📍 ${esc(r.loc||"場所未記入")}${r.lat!=null&&r.lon!=null?`<span class="map-btn">🗺 地図</span>`:""}</div>
+          <div class="loc">📍 ${esc(r.loc||"場所未記入")}${r.lat!=null&&r.lon!=null?`<span class="map-btn">🗺 地図${r.geoSrc==="place"?"（目安）":""}</span>`:""}</div>
         </div>
         <span class="${badgeClass(r.tideType)}">${esc(r.tideType||"—")}</span>
       </div>
       ${r.tide&&r.tide.points&&r.tide.points.length?`<canvas class="mini-canvas" height="120"></canvas>`:""}
       ${fishHtml}
       ${tideInfo}
+      ${r.weather?`<div class="kv"><b>天気:</b> ${fmtWeather(r.weather)}</div>`:""}
       ${r.tackle?`<div class="kv"><b>タックル:</b> ${esc(r.tackle).replace(/\n/g,"、")}</div>`:""}
       ${r.memo?`<div class="kv"><b>メモ:</b> ${esc(r.memo).replace(/\n/g,"<br>")}</div>`:""}
       <div class="acts">
@@ -1171,19 +1483,66 @@ async function renderHistory(){
     div.querySelectorAll(".zoom").forEach(im=>im.onclick=()=>openLightbox(im.src));
     const mapBtn=div.querySelector(".map-btn");
     if(mapBtn) mapBtn.onclick=()=>openMapLightbox(r.lat, r.lon);
-    div.querySelector(".del").onclick=async ()=>{ if(confirm("この記録を削除しますか？")){ await dbDeleteRecord(r.id); await renderHistory(); toast("削除しました"); } };
+    div.querySelector(".del").onclick=async ()=>{ if(confirm("この記録を削除しますか？")){ await dbDeleteRecord(r.id); markChanged(); await renderHistory(); toast("削除しました"); } };
     div.querySelector(".edit").onclick=()=>startEdit(r);
     div.querySelector(".dup").onclick=()=>{
-      el("f-date").value=new Date().toISOString().slice(0,10);
+      el("f-date").value=ymd(new Date());
       el("f-start").value=""; el("f-end").value="";
       el("f-loc").value=r.loc||""; el("f-tackle").value=r.tackle||"";
       userEditedLoc=!!r.loc; userEditedDate=false; // 引き継いだ場所は尊重
       photoDateLocked=false; photoLocLocked=!!r.loc;
-      if(r.lat!=null && r.lon!=null) showLocMap(r.lat, r.lon); else hideLocMap();
+      editingWeather=null;
+      if(r.lat!=null && r.lon!=null) showLocMap(r.lat, r.lon, r.geoSrc||"photo"); else hideLocMap();
       el("fish-list").innerHTML=""; (r.fish.length?r.fish:[{}]).forEach(f=>addFishRow(f.name,f.size)); // 写真は引き継がない
       switchView("log"); refreshTide(); toast("場所・タックルを引き継ぎました");
     };
   });
+  backfillRecords();
+}
+
+// 過去の記録に、座標（場所名から）と天気を後から付ける。通信できるときに裏で少しずつ進める。
+let _bfRunning=false; const _bfFailed=new Set();
+function recRepMinute(r){
+  const span=(r.start!=null||r.end!=null) ? {start:r.start, end:r.end} : (r.time ? {start:parseHM(r.time), end:null} : null);
+  return repMinute(span, (r.fish||[]).map(f=>f.t));
+}
+async function backfillRecords(){
+  if(_bfRunning || navigator.onLine===false) return;
+  _bfRunning=true;
+  let changed=false;
+  try{
+    const recs=await dbGetAllRecords();
+    let n=0;
+    for(const r of recs){
+      if(n>=40) break;
+      if(_bfFailed.has(r.id)) continue;
+      const hasGeo = r.lat!=null && r.lon!=null;
+      const needGeo = !hasGeo && !!(r.loc||"").trim();
+      const needWx = !r.weather && /^\d{4}-\d{2}-\d{2}$/.test(r.date||"") && dayDiffFromToday(r.date)<=0;
+      if(!needGeo && !(needWx && hasGeo)) continue;
+      n++;
+      try{
+        const patch={};
+        let lat=r.lat, lon=r.lon;
+        if(needGeo){ const g=await geocode(r.loc.trim()); lat=patch.lat=g.lat; lon=patch.lon=g.lon; patch.geoSrc="place"; }
+        if(needWx && lat!=null && lon!=null){
+          const day=await getWeatherDay(lat, lon, r.date);
+          if(day) patch.weather=weatherAt(day, recRepMinute(r));
+        }
+        if(!Object.keys(patch).length){ _bfFailed.add(r.id); continue; }
+        // 取得中に編集されていても壊さないよう、書く直前に読み直して足りない項目だけ埋める
+        const fresh=await dbGetRecord(r.id);
+        if(!fresh) continue;
+        let did=false;
+        if(patch.lat!=null && fresh.lat==null && (fresh.loc||"").trim()===r.loc.trim()){ fresh.lat=patch.lat; fresh.lon=patch.lon; fresh.geoSrc=patch.geoSrc; did=true; }
+        if(patch.weather && !fresh.weather && fresh.date===r.date && fresh.lat!=null && patch.weather.k===wxKey(fresh.lat, fresh.lon, fresh.date)){ fresh.weather=patch.weather; did=true; }
+        if(did){ await dbPutRecord(fresh); changed=true; }
+        if(!did || (needWx && !patch.weather)) _bfFailed.add(r.id); // 付けられなかったものは今回はあきらめる（次回起動時にやり直す）
+      }catch(e){ _bfFailed.add(r.id); }
+    }
+  }catch(e){ /* 次に履歴を開いたときにやり直す */ }
+  finally{ _bfRunning=false; }
+  if(changed && el("view-history").classList.contains("on")) renderHistory(); // 付いた天気・地図ボタンを表示（残りがあれば続きも進む）
 }
 
 // 既存記録をフォームに読み込んで編集モードに入る
@@ -1198,7 +1557,8 @@ async function startEdit(r){
   // 手入力済み扱い（写真の自動反映で勝手に上書きしない）
   userEditedDate=true; userEditedLoc=!!r.loc;
   photoDateLocked=true; photoLocLocked=!!r.loc; // 既存記録：写真追加で日時・場所を変えない
-  if(r.lat!=null && r.lon!=null) showLocMap(r.lat, r.lon); else hideLocMap();
+  editingWeather=r.weather||null;
+  if(r.lat!=null && r.lon!=null) showLocMap(r.lat, r.lon, r.geoSrc||"photo"); else hideLocMap();
   // 魚の行（写真Blobはフォーム用にdataURLへ）
   el("fish-list").innerHTML="";
   const fishArr = r.fish && r.fish.length ? r.fish : [{}];
@@ -1228,7 +1588,119 @@ function switchView(name){
   el("view-"+name).classList.add("on");
   document.querySelectorAll(".tabbar button").forEach(b=>b.classList.toggle("on", b.dataset.view===name));
   if(name==="history") renderHistory();
+  if(name==="stats") renderStats();
+  if(name==="settings") renderBackupInfo();
   window.scrollTo(0,0);
+}
+
+/* ===================== 分析 ===================== */
+let statsSp="";
+function tideHeightAt(pts, m){
+  for(let i=1;i<pts.length;i++){ if(pts[i].m>=m){ const a=pts[i-1], b=pts[i]; return a.h+(b.h-a.h)*((m-a.m)/((b.m-a.m)||1)); } }
+  return pts[pts.length-1].h;
+}
+const PHASES=["上げ潮","満潮前後","下げ潮","干潮前後"];
+// その時刻の潮の動き。満潮・干潮の前後30分は「前後」、それ以外は潮位の傾きで上げ/下げ。
+function tidePhase(tide, m){
+  const pts=tide && tide.points;
+  if(!pts || pts.length<2 || m==null) return null;
+  for(const e of (tide.flood||[])) if(Math.abs(e.m-m)<=30) return "満潮前後";
+  for(const e of (tide.edd||[]))   if(Math.abs(e.m-m)<=30) return "干潮前後";
+  const d=tideHeightAt(pts, Math.min(1439,m+20)) - tideHeightAt(pts, Math.max(0,m-20));
+  return d>0 ? "上げ潮" : d<0 ? "下げ潮" : null;
+}
+const HOUR_BINS=["0〜3時","3〜6時","6〜9時","9〜12時","12〜15時","15〜18時","18〜21時","21〜24時"];
+// rows: [{label, value, text}]。棒の長さは value（最大値を100%）、数値は棒の横に文字で出す。
+// stack=true は名前が長い項目用（名前を棒の上の行に出す）
+function barsHtml(rows, stack){
+  const max=Math.max(0, ...rows.map(r=>r.value||0));
+  return rows.map(r=>`<div class="br${stack?" stack":""}"><span class="lb">${esc(r.label)}</span><div><div class="bw">${r.value>0?`<div class="bar" style="width:${(r.value/max*68).toFixed(1)}%"></div>`:""}<span class="val">${r.text}</span></div>${r.sub?`<div class="sb">${r.sub}</div>`:""}</div></div>`).join("");
+}
+const fmt1=v=>(Math.round(v*10)/10).toFixed(1).replace(/\.0$/,"");
+
+async function renderStats(){
+  const recs=(await dbGetAllRecords()).filter(r=>r.date);
+  recs.forEach(r=>{ if(!Array.isArray(r.fish)) r.fish=[]; });
+  el("stats-empty").style.display = recs.length ? "none" : "block";
+  el("stats-body").style.display  = recs.length ? "block" : "none";
+  if(!recs.length) return;
+
+  const spList=uniqSorted(recs.flatMap(r=>r.fish.map(fishName)));
+  statsSp=setOptions(el("stats-sp"), [["","すべての魚種"], ...spList.map(s=>[s,s])], statsSp);
+  const hit=f=>isFish(f) && (!statsSp || fishName(f)===statsSp);
+  const cnt=r=>r.fish.filter(hit).length;
+  const totalFish=recs.reduce((s,r)=>s+cnt(r),0);
+  el("stats-note").textContent = `釣行${recs.length}回・${statsSp?statsSp+" ":""}${totalFish}匹を集計しています。`+(recs.length<10?"記録が少ないうちは偏りが大きいので、目安として見てください。":"");
+
+  // --- 魚種別の記録 ---
+  const bySp=new Map();
+  recs.forEach(r=>r.fish.filter(hit).forEach(f=>{
+    const nm=fishName(f)||"（名前なし）";
+    const s=bySp.get(nm)||{n:0, sizes:[], best:null};
+    s.n++;
+    const sz=parseFloat(f.size);
+    if(isFinite(sz) && sz>0){ s.sizes.push(sz); if(!s.best || sz>s.best.sz) s.best={sz, date:r.date, loc:r.loc||""}; }
+    bySp.set(nm, s);
+  }));
+  const spRows=Array.from(bySp.entries()).sort((a,b)=>b[1].n-a[1].n || a[0].localeCompare(b[0],"ja"));
+  el("stats-species").innerHTML = spRows.length ? spRows.map(([nm,s])=>{
+    const avg=s.sizes.length ? s.sizes.reduce((a,b)=>a+b,0)/s.sizes.length : null;
+    return `<div class="r"><div class="h"><span class="nm">${esc(nm)}</span><span>${s.n}匹${s.best?`　最大 <b>${fmt1(s.best.sz)}cm</b>`:""}</span></div>`+
+      (s.best?`<div class="sub">最大は ${esc(s.best.date)}${s.best.loc?" "+esc(s.best.loc):""}</div><div class="sub">平均 ${fmt1(avg)}cm（サイズを記録した${s.sizes.length}匹）</div>`:`<div class="sub">サイズの記録なし</div>`)+`</div>`;
+  }).join("") : `<div class="note" style="margin-top:0;">まだ釣果がありません。</div>`;
+
+  // --- 潮回り別（1回あたり） ---
+  const TIDE_ORDER=["大潮","中潮","小潮","長潮","若潮"];
+  const byTide=new Map();
+  recs.forEach(r=>{ if(!r.tideType) return; const s=byTide.get(r.tideType)||{trips:0, fish:0}; s.trips++; s.fish+=cnt(r); byTide.set(r.tideType, s); });
+  const tideKeys=[...TIDE_ORDER.filter(k=>byTide.has(k)), ...Array.from(byTide.keys()).filter(k=>!TIDE_ORDER.includes(k))];
+  el("stats-tide").innerHTML = tideKeys.length ? barsHtml(tideKeys.map(k=>{ const s=byTide.get(k); return {label:k, value:s.fish/s.trips, text:`${fmt1(s.fish/s.trips)}匹/回`, sub:`${s.trips}回で${s.fish}匹`}; })) : "";
+  const noTide=recs.filter(r=>!r.tideType).length;
+  el("stats-tide-note").textContent = (tideKeys.length?"":"潮回りの付いた記録がまだありません。")+(noTide?`潮汐の無い記録${noTide}回は除いています。`:"");
+
+  // --- 潮の動き別・時間帯別（釣れた時刻のわかる魚だけ） ---
+  // 「1時間あたり」は、開始・終了時間のある釣行だけで計算する（分子＝その釣行の時間内に釣れた魚、分母＝釣りをしていた時間）
+  const phase={}, phaseMin={}, phaseIn={}, hour=new Array(8).fill(0), hourMin=new Array(8).fill(0), hourIn=new Array(8).fill(0);
+  PHASES.forEach(p=>{ phase[p]=0; phaseMin[p]=0; phaseIn[p]=0; });
+  let timed=0, timedTide=0, spanTrips=0;
+  recs.forEach(r=>{
+    const hasSpan = r.start!=null && r.end!=null && r.end>r.start;
+    r.fish.filter(hit).forEach(f=>{
+      if(f.t==null || isNaN(+f.t)) return;
+      const t=+f.t, hb=Math.min(7, Math.max(0, Math.floor(t/180))), inSpan=hasSpan && t>=r.start && t<=r.end;
+      timed++; hour[hb]++; if(inSpan) hourIn[hb]++;
+      const p=tidePhase(r.tide, t); if(p){ phase[p]++; timedTide++; if(inSpan) phaseIn[p]++; }
+    });
+    if(hasSpan){
+      spanTrips++;
+      for(let m=r.start; m<r.end; m+=5){ // 5分刻みで数える
+        hourMin[Math.min(7, Math.floor(m/180))]+=5;
+        const p=tidePhase(r.tide, m); if(p) phaseMin[p]+=5;
+      }
+    }
+  });
+  const rate=(n,min)=> min>=120 ? `1時間あたり${fmt1(n/(min/60))}匹（釣りをした時間 ${fmt1(min/60)}時間）` : "";
+  el("stats-phase").innerHTML = timedTide ? barsHtml(PHASES.map(p=>({label:p, value:phase[p], text:`${phase[p]}匹`, sub:rate(phaseIn[p], phaseMin[p])}))) : "";
+  el("stats-phase-note").textContent = timedTide
+    ? `釣れた時刻と潮汐のわかる${timedTide}匹が対象。満潮・干潮の前後30分を「前後」としています（幅が1時間しかないので、匹数は少なめに出ます）。`
+    : "釣れた時刻（写真の撮影時刻）と潮汐のわかる釣果がまだありません。";
+  el("stats-hour").innerHTML = timed ? barsHtml(HOUR_BINS.map((l,i)=>({label:l, value:hour[i], text:`${hour[i]}匹`, sub:rate(hourIn[i], hourMin[i])}))) : "";
+  el("stats-hour-note").textContent = timed
+    ? `釣れた時刻のわかる${timed}匹が対象。匹数はよく釣りに行く時間帯ほど多くなります。`+(spanTrips?`「1時間あたり」は、開始・終了時間を入れた釣行${spanTrips}回から計算し、合計2時間以上釣りをした時間帯にだけ出します。`:"釣行の開始・終了時間を入れると、1時間あたりの匹数も出ます。")
+    : "釣れた時刻（写真の撮影時刻）のわかる釣果がまだありません。";
+
+  // --- 月別 ---
+  const mon=Array.from({length:12},()=>({trips:0, fish:0}));
+  recs.forEach(r=>{ const i=parseInt(r.date.slice(5,7),10)-1; if(i>=0 && i<12){ mon[i].trips++; mon[i].fish+=cnt(r); } });
+  el("stats-month").innerHTML = barsHtml(mon.map((s,i)=>({label:(i+1)+"月", value:s.fish, text:s.trips?`${s.fish}匹 <small>（釣行${s.trips}回）</small>`:`<small>—</small>`})));
+
+  // --- 場所別（1回あたり） ---
+  const byLoc=new Map();
+  recs.forEach(r=>{ const l=(r.loc||"").trim(); if(!l) return; const s=byLoc.get(l)||{trips:0, fish:0, zero:0}; s.trips++; const c=cnt(r); s.fish+=c; if(!c) s.zero++; byLoc.set(l, s); });
+  const locRows=Array.from(byLoc.entries()).sort((a,b)=>b[1].trips-a[1].trips || b[1].fish-a[1].fish).slice(0,10);
+  el("stats-loc").innerHTML = locRows.length
+    ? barsHtml(locRows.map(([l,s])=>({label:l, value:s.fish/s.trips, text:`${fmt1(s.fish/s.trips)}匹/回`, sub:`${s.trips}回で${s.fish}匹${s.zero?`・釣果なし${s.zero}回`:""}`})), true)
+    : `<div class="note" style="margin-top:0;">場所の入った記録がまだありません。</div>`;
 }
 
 /* ===================== UI部品 ===================== */
@@ -1268,8 +1740,10 @@ async function exportData(){
   const data={records:out, locations:loadLocs(), exportedAt:new Date().toISOString()};
   const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
-  const a=document.createElement("a"); a.href=url; a.download=`釣果ノート_${new Date().toISOString().slice(0,10)}.json`; a.click();
+  const a=document.createElement("a"); a.href=url; a.download=`釣果ノート_${ymd(new Date())}.json`; a.click();
   URL.revokeObjectURL(url); toast("書き出しました");
+  lsSet(LAST_EXPORT_KEY, Date.now()); requestPersist();
+  updateBackupBanner(); renderBackupInfo();
 }
 function importData(file){
   const reader=new FileReader();
@@ -1290,6 +1764,7 @@ function importData(file){
           await dbPutRecord(r);
         }
         if(d.locations) saveLocs(Array.from(new Set([...d.locations,...loadLocs()])).slice(0,20));
+        markChanged();
         buildLocUI(); await renderHistory(); toast("読み込みました");
       }
     }catch(e){ alert("読み込みに失敗しました: "+e.message); }
@@ -1303,17 +1778,17 @@ async function init(){
   buildTackleChips();
   try{ await migrateFromLocalStorage(); }catch(e){ console.warn("移行スキップ", e); }
 
-  const now=new Date();
-  el("f-date").value=now.toISOString().slice(0,10);
+  el("f-date").value=ymd(new Date());
   el("fish-list").innerHTML=""; addFishRow();
 
   // ユーザーが手で触った欄は写真の自動反映で上書きしない
   el("f-date").addEventListener("input", ()=>{ userEditedDate=true; });
   el("f-loc").addEventListener("input", ()=>{ userEditedLoc=true; });
   el("f-date").addEventListener("change", refreshTide);
+  el("f-date").addEventListener("change", refreshWx);
   el("f-loc").addEventListener("change", refreshTide); // 場所確定（blur/Enter）で潮汐を自動取得
-  // 釣行 開始・終了時間 → 潮汐グラフの帯を更新（手動入力）
-  const onSpanChange=()=>{ if(currentTide){ drawTide(el("tide-canvas"), currentTide, tripSpan(), collectFishMarks()); } };
+  // 釣行 開始・終了時間 → 潮汐グラフの帯と天気の時刻を更新（手動入力）
+  const onSpanChange=()=>{ if(currentTide){ drawTide(el("tide-canvas"), currentTide, tripSpan(), collectFishMarks()); } renderWx(); };
   el("f-start").addEventListener("input", onSpanChange);
   el("f-end").addEventListener("input", onSpanChange);
   el("fill-times").onclick=fillTimesFromFish;
@@ -1324,7 +1799,15 @@ async function init(){
   el("export-btn").onclick=exportData;
   el("import-file").onchange=e=>{ if(e.target.files[0]) importData(e.target.files[0]); e.target.value=""; };
   el("diag-file").onchange=e=>{ if(e.target.files[0]) runPhotoDiag(e.target.files[0]); e.target.value=""; };
-  el("clear-btn").onclick=async ()=>{ if(confirm("本当にすべての釣行記録を削除しますか？この操作は元に戻せません。")){ await dbClearRecords(); await renderHistory(); toast("全データを削除しました"); } };
+  el("clear-btn").onclick=async ()=>{ if(confirm("本当にすべての釣行記録を削除しますか？この操作は元に戻せません。")){ await dbClearRecords(); await renderHistory(); updateBackupBanner(); toast("全データを削除しました"); } };
+  el("use-gps").onclick=useCurrentLocation;
+  el("flt-sp").onchange=e=>{ histFilter.sp=e.target.value; renderHistory(); };
+  el("flt-loc").onchange=e=>{ histFilter.loc=e.target.value; renderHistory(); };
+  el("flt-per").onchange=e=>{ histFilter.per=e.target.value; renderHistory(); };
+  el("stats-sp").onchange=e=>{ statsSp=e.target.value; renderStats(); };
+  el("backup-now").onclick=exportData;
+  el("backup-later").onclick=()=>{ lsSet(BACKUP_SNOOZE_KEY, Date.now()+7*DAY_MS); updateBackupBanner(); };
+  updateBackupBanner();
   document.querySelectorAll(".tabbar button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   el("lightbox").onclick=closeLightbox;
   el("map-lightbox").onclick=closeMapLightbox;
