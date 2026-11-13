@@ -213,10 +213,12 @@
         <datalist id="loc-list"></datalist>
         <div class="chips" id="loc-chips"></div>
         <button type="button" class="btn ghost sm" id="use-gps" style="width:100%; margin-top:8px;">📍 現在地を使う</button>
+        <div class="note" id="gps-msg" style="display:none; color:var(--warn); opacity:1;"></div>
         <div class="note" id="port-info" style="margin-top:8px;">釣果写真を選ぶと、撮影日時・場所・潮汐を自動で読み取ります。場所の手入力でもOK。</div>
         <div class="loc-map" id="loc-map" style="display:none;"><iframe id="loc-map-frame" src="" title="釣り場の地図"></iframe></div>
         <div class="note" id="loc-map-note" style="display:none;"></div>
         <a href="#" id="loc-map-link" class="map-link" style="display:none;" target="_blank" rel="noopener">🗺 大きな地図で見る</a>
+        <a href="#" id="loc-map-clear" class="map-link" style="display:none; margin-left:16px; color:var(--sub);">✕ ピンを外す</a>
       </div>
     </div>
 
@@ -486,7 +488,7 @@ function saveLocs(l){ localStorage.setItem(LOC_KEY, JSON.stringify(l)); }
 
 /* ===================== 潮汐API（tide736.net） ===================== */
 const TIDE_CACHE_PREFIX = "tide-cache:";
-const HARBOR_CACHE_PREFIX = "harbor-cache:";
+const HARBOR_CACHE_PREFIX = "harbor-cache2:"; // 2: 港の座標の読み方（度.分→度）を直したので、以前の保存分は使わない
 
 function parseHM(t){ const p=String(t).trim().split(":"); return (+p[0])*60 + (+p[1]); }
 
@@ -555,13 +557,16 @@ async function getHarbors(pc){
   if(c){ try{ return JSON.parse(c); }catch(e){} }
   const now=new Date();
   const j=JSON.parse(await fetchTide({pc, hc:1, yr:now.getFullYear(), mn:now.getMonth()+1, dy:now.getDate()}));
-  const list=(j.tide&&j.tide.link)? j.tide.link.map(h=>({hc:h.harbor_code, name:h.harbor_namej, lat:+h.latitude, lon:+h.longitude})) : [];
+  // tide736 の緯度経度は「度.分」表記（35.40 = 35度40分）。小数の度に直してから使う
+  const dm=v=>{ const d=Math.trunc(+v), m=Math.round((+v-d)*100); return d+m/60; };
+  const list=(j.tide&&j.tide.link)? j.tide.link.map(h=>({hc:h.harbor_code, name:h.harbor_namej, lat:dm(h.latitude), lon:dm(h.longitude)})) : [];
   if(list.length) localStorage.setItem(ck, JSON.stringify(list));
   return list;
 }
 
 /* ===================== 場所→最寄り基準港（自動解決） ===================== */
-const GEO_CACHE_PREFIX = "geo-cache:";
+const GEO_CACHE_PREFIX = "geo-cache2:"; // 2: 検索の当てはめ方を直したので、以前の結果（別の地名に当たっていた可能性あり）は使わない
+const GEO_VER = 2;                      // 記録に残す「場所名→座標」の版。これより古い場所名由来の座標は取り直す
 // 都道府県名（JISコード順, index+1 = コード = tide736のpc）
 const PREF_NAMES = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
 // Photonの住所プロパティから都道府県コードを推定（GSI逆ジオが使えない沖合用フォールバック）
@@ -585,22 +590,41 @@ function pickBiased(cands){
   for(const c of cands){ const d=haversine(GEO_BIAS_LAT,GEO_BIAS_LON,c.lat,c.lon); if(d<bestD){ bestD=d; best=c; } }
   return (bestD>GEO_NEAR_KM)? cands[0] : best;
 }
-// 地名 → 候補配列。国土地理院(日本特化・高速)を優先、ダメならPhoton(OSM)。どちらもCORS対応・直接呼べる。
+// 表記ゆれを吸収して比べるための正規化（全角/半角・空白・ヶ/ケ）
+function normPlace(s){ return String(s||"").normalize("NFKC").replace(/\s+/g,"").replace(/[ヶケ]/g,"ケ").toLowerCase(); }
+// 国土地理院の検索は、入力の頭の一部だけが一致する別の地名も返す（「大黒海づり施設」→「稚内市大黒」等）。
+// 候補名が入力を丸ごと含むか、入力が候補名を（十分な長さで）丸ごと含むときだけ採用する。
+function gsiTitleMatches(title, query){
+  const t=normPlace(title), q=normPlace(query);
+  if(!t || !q) return false;
+  if(t.includes(q)) return true;
+  return t.length>=Math.max(4, Math.ceil(q.length*0.6)) && q.includes(t);
+}
+// 地名 → 候補配列。国土地理院(地名・住所に強い) → Photon / Nominatim(どちらもOSM。施設名・公園名に強い)。すべてCORS対応・直接呼べる。
 async function geocodeCandidates(place){
+  let failed=0; // 応答しなかった検索サービスの数（「見つからない」と「検索できない」を分けて伝えるため）
   // 1) 国土地理院 地名検索
   try{
     const arr=JSON.parse(await fetchText(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(place)}`, {timeout:6000}));
-    if(Array.isArray(arr) && arr.length){
-      const cands=arr.filter(f=>f.geometry&&f.geometry.coordinates)
-        .map(f=>({lon:+f.geometry.coordinates[0], lat:+f.geometry.coordinates[1], label:(f.properties&&f.properties.title)||place, props:null}));
-      if(cands.length) return cands;
-    }
-  }catch(e){ /* Photonにフォールバック */ }
-  // 2) Photon(komoot/OSM) フォールバック
-  const sj=JSON.parse(await fetchText(`https://photon.komoot.io/api/?q=${encodeURIComponent(place)}&limit=8&lang=default&lat=${GEO_BIAS_LAT}&lon=${GEO_BIAS_LON}`, {timeout:6000}));
-  if(!sj.features || !sj.features.length) throw new Error("場所が見つかりませんでした");
-  return sj.features.filter(f=>f.geometry&&f.geometry.coordinates)
-    .map(f=>({lon:+f.geometry.coordinates[0], lat:+f.geometry.coordinates[1], label:(f.properties&&(f.properties.name))||place, props:f.properties}));
+    const cands=(Array.isArray(arr)?arr:[]).filter(f=>f.geometry && f.geometry.coordinates && f.properties && gsiTitleMatches(f.properties.title, place))
+      .map(f=>({lon:+f.geometry.coordinates[0], lat:+f.geometry.coordinates[1], label:f.properties.title, props:null}));
+    if(cands.length) return cands;
+  }catch(e){ failed++; }
+  // 2) Photon と 3) Nominatim を同時に問い合わせる（片方が止まっていても待たされないように）。Photonを優先。
+  const nomi=fetchText(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=jsonv2&limit=5&countrycodes=jp&accept-language=ja`, {timeout:7000})
+    .then(t=>{ const arr=JSON.parse(t); return (Array.isArray(arr)?arr:[]).filter(f=>f.lat&&f.lon).map(f=>({lon:+f.lon, lat:+f.lat, label:f.display_name||place, props:null})); })
+    .catch(()=>null);
+  try{
+    const sj=JSON.parse(await fetchText(`https://photon.komoot.io/api/?q=${encodeURIComponent(place)}&limit=8&lang=default&lat=${GEO_BIAS_LAT}&lon=${GEO_BIAS_LON}`, {timeout:4000}));
+    const cands=(sj.features||[]).filter(f=>f.geometry&&f.geometry.coordinates)
+      .map(f=>({lon:+f.geometry.coordinates[0], lat:+f.geometry.coordinates[1], label:(f.properties&&(f.properties.name))||place, props:f.properties}));
+    if(cands.length) return cands;
+  }catch(e){ failed++; }
+  const nc=await nomi;
+  if(nc===null) failed++; else if(nc.length) return nc;
+  const err=new Error(failed ? "場所を検索できませんでした。検索サービスが混み合っているようです" : "場所が見つかりませんでした");
+  err.notFound=!failed; // どのサービスも「該当なし」と答えた
+  throw err;
 }
 // 地名 → {lat, lon, pc(都道府県コード)}。結果はキャッシュ。
 async function geocode(place){
@@ -772,6 +796,7 @@ function showLocMap(lat,lon,src){
   const link=el("loc-map-link");
   link.href=`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
   link.style.display="inline-block";
+  el("loc-map-clear").style.display="inline-block";
   refreshWx();
 }
 function hideLocMap(){
@@ -779,28 +804,58 @@ function hideLocMap(){
   el("loc-map").style.display="none"; el("loc-map-frame").src="";
   el("loc-map-note").style.display="none";
   el("loc-map-link").style.display="none"; el("loc-map-link").href="#";
+  el("loc-map-clear").style.display="none";
   refreshWx();
 }
 // 「現在地を使う」：スマホのGPSでピンを立てる（写真に位置情報が無いとき用）
-function useCurrentLocation(){
-  if(!navigator.geolocation){ toast("この端末では現在地を取得できません"); return; }
-  const btn=el("use-gps"); btn.disabled=true; btn.textContent="📍 現在地を取得中…";
-  const done=()=>{ btn.disabled=false; btn.textContent="📍 現在地を使う"; };
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    done();
-    const lat=pos.coords.latitude, lon=pos.coords.longitude;
-    showLocMap(lat, lon, "gps");
-    photoLocLocked=true; // 後から入れた写真で場所を上書きしない
-    if(!el("f-loc").value.trim()){
-      const name=await reverseGeocodeName(lat, lon);
-      if(name && !el("f-loc").value.trim()) el("f-loc").value=name;
-    }
-    refreshTide({lat, lon});
-    toast("現在地を設定しました");
-  }, err=>{
-    done();
-    toast(err && err.code===1 ? "位置情報の利用が許可されていません" : "現在地を取得できませんでした");
-  }, {enableHighAccuracy:true, timeout:15000, maximumAge:60000});
+// GPSは最初の値が粗いことがあるので、最大8秒待っていちばん精度の良い値を使う（誤差30m以内が来たらすぐ確定）。
+// 高精度で1つも取れなければ（屋内など）、Wi-Fi・基地局からの粗い位置に切り替える。
+function locateBest(){
+  return new Promise((resolve, reject)=>{
+    const geo=navigator.geolocation;
+    let best=null, lastErr=null, ended=false, wid=null, timer=null;
+    const end=()=>{
+      if(ended) return; ended=true;
+      if(wid!=null) geo.clearWatch(wid);
+      clearTimeout(timer);
+      if(best) return resolve(best);
+      if(lastErr && lastErr.code===1) return reject(lastErr); // 許可されていないなら粗い位置も取れない
+      geo.getCurrentPosition(resolve, reject, {enableHighAccuracy:false, timeout:10000, maximumAge:300000});
+    };
+    timer=setTimeout(end, 8000);
+    wid=geo.watchPosition(pos=>{
+      if(!best || pos.coords.accuracy<best.coords.accuracy) best=pos;
+      if(pos.coords.accuracy<=30) end();
+    }, err=>{ lastErr=err; if(err.code===1) end(); }, {enableHighAccuracy:true, timeout:8000, maximumAge:0});
+  });
+}
+function setGpsMsg(text){ const m=el("gps-msg"); m.textContent=text||""; m.style.display=text?"block":"none"; }
+async function useCurrentLocation(){
+  if(!navigator.geolocation){ setGpsMsg("⚠️ このブラウザでは現在地を取得できません。"); return; }
+  const btn=el("use-gps"); btn.disabled=true; btn.textContent="📍 現在地を取得中…（最大20秒）";
+  setGpsMsg("");
+  let pos;
+  try{ pos=await locateBest(); }
+  catch(err){
+    const code=err && err.code;
+    setGpsMsg(code===1
+      ? "⚠️ 位置情報が許可されていません。アドレスバー左のアイコン →「権限」→「位置情報」を許可してから、もう一度押してください。スマホ本体の位置情報がオフのときも同じ表示になります。"
+      : code===2
+      ? "⚠️ 現在地を特定できませんでした。スマホ本体の位置情報がオンか確認し、屋外でもう一度押してください。"
+      : "⚠️ 時間内に現在地を取得できませんでした。屋外か窓の近くで、もう一度押してください。");
+    return;
+  }
+  finally{ btn.disabled=false; btn.textContent="📍 現在地を使う"; }
+  const lat=pos.coords.latitude, lon=pos.coords.longitude, acc=Math.round(pos.coords.accuracy||0);
+  showLocMap(lat, lon, "gps");
+  photoLocLocked=true; // 後から入れた写真で場所を上書きしない
+  if(acc>100) setGpsMsg(`⚠️ 現在地の誤差が大きめです（約${acc>=1000?(acc/1000).toFixed(1)+"km":acc+"m"}）。屋外でもう一度押すと正確になります。`);
+  if(!el("f-loc").value.trim()){
+    const name=await reverseGeocodeName(lat, lon);
+    if(name && !el("f-loc").value.trim()) el("f-loc").value=name;
+  }
+  refreshTide({lat, lon});
+  toast(acc ? `現在地を設定しました（誤差 約${acc>=1000?(acc/1000).toFixed(1)+"km":acc+"m"}）` : "現在地を設定しました");
 }
 
 /* ===================== 天気（Open-Meteo） ===================== */
@@ -949,11 +1004,19 @@ async function prefFromCoords(lat, lon){
   }catch(e){ _lastGeoErr="GSI:"+(e&&e.message||e); }
   if(!pc){
     try{
-      const j=JSON.parse(await fetchText(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=default`));
+      const j=JSON.parse(await fetchText(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=default`, {timeout:4000}));
       const p=j.features && j.features[0] && j.features[0].properties;
       pc=prefFromProps(p);
       if(!pc) _lastGeoErr+=" Photon:住所判定不可";
     }catch(e){ _lastGeoErr+=" Photon:"+(e&&e.message||e); }
+  }
+  if(!pc){ // 予備：Nominatim(OSM公式)。都道府県をISOコード(JP-13 等。番号はJISコードと同じ)で返す。港内・沖合の座標でも拾える
+    try{
+      const j=JSON.parse(await fetchText(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=10&accept-language=ja`, {timeout:6000}));
+      const m=/^JP-(\d{2})$/.exec((j && j.address && j.address["ISO3166-2-lvl4"])||"");
+      if(m && +m[1]>=1 && +m[1]<=47) pc=+m[1];
+      else _lastGeoErr+=" Nominatim:住所判定不可";
+    }catch(e){ _lastGeoErr+=" Nominatim:"+(e&&e.message||e); }
   }
   return pc;
 }
@@ -967,7 +1030,7 @@ async function refreshTide(coords){
   if(!dateStr) return;
   const token=++tideReqToken;
   if(!place && formGeoSrc==="place") hideLocMap();                         // 場所名を消したら、場所名由来のピンも消す
-  if(!place && !coords && formLat!=null) coords={lat:formLat, lon:formLon}; // 場所名が空でもピンがあれば、その座標で潮汐を出す
+  if(!coords && isExactGeo(formGeoSrc)) coords={lat:formLat, lon:formLon}; // 写真・現在地の正確なピンがあれば、場所名の検索に頼らずその座標で潮汐を出す
 
   if(!place && !coords){
     currentTide=null; currentPort=null;
@@ -1124,23 +1187,33 @@ function addFishRow(name="",size="",photo="",tmin=null){
     if(meta.lat!=null && meta.lon!=null){
       const lockedLoc = userEditedLoc || photoLocLocked;
       if(lockedLoc){
-        if(!isExactGeo(formGeoSrc)) showLocMap(meta.lat, meta.lon, "photo"); // 場所名は手入力を尊重しつつ、正確なピンがまだ無ければ写真の位置に立てる
+        // 場所名は手入力を尊重する。正確なピンがまだ無ければ、地図・潮汐・天気は写真の位置で出す
+        if(!isExactGeo(formGeoSrc)){
+          showLocMap(meta.lat, meta.lon, "photo");
+          refreshTide({lat:meta.lat, lon:meta.lon});
+          msgs.push("📍 写真の位置を地図と潮汐に使いました");
+        }else{
+          msgs.push("📍 位置情報あり（場所は最初に決めた位置のまま）");
+        }
         hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>写真を追加しました</span>`;
         return;
       }
       showLocMap(meta.lat, meta.lon, "photo");
-      let placeName=await reverseGeocodeName(meta.lat, meta.lon);
-      if(placeName) el("f-loc").value=placeName;
       photoLocLocked=true;
+      refreshTide({lat:meta.lat, lon:meta.lon}); // 座標から直接 潮汐解決。場所名の検索を待たずに始める
+      hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.concat("📍 位置情報を読み取りました").map(esc).join("　")}<br><span class="spinner" style="width:12px;height:12px"></span>場所名を調べています…</span>`;
+      const placeName=await reverseGeocodeName(meta.lat, meta.lon);
+      if(placeName && !userEditedLoc && !el("f-loc").value.trim()) el("f-loc").value=placeName;
       msgs.push(`📍 ${placeName||`${meta.lat.toFixed(4)}, ${meta.lon.toFixed(4)}`}`);
-      hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>写真から自動入力しました</span>`;
-      refreshTide({lat:meta.lat, lon:meta.lon}); // 座標から直接 潮汐解決（描画後にマークも反映）
+      hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}<br>${placeName?"写真から自動入力しました":"位置は読み取れました。場所名は見つからなかったので、上の「場所」に入力してください"}</span>`;
       toast("写真から日時・場所を取得しました");
       return;
     }
     // --- GPSなし（スマホのギャラリー選択は位置情報を消すことが多い）---
     const noLoc = !el("f-loc").value.trim();
-    const guide = noLoc ? '<br><span style="color:var(--gold)">📍 位置情報が消えています。写真を選び直すときは「ファイル」→「ギャラリー」から選ぶと残ります。または上の「場所」に釣り場名を入力してください。</span>' : "";
+    const guide = noLoc
+      ? '<br><span style="color:var(--gold)">📍 位置情報が消えています。写真を選び直すときは「ファイル」→「ギャラリー」から選ぶと残ります。または上の「場所」に釣り場名を入力してください。</span>'
+      : '<br>📍 この写真に位置情報は入っていません（場所は入力した名前から求めます）';
     hint.className="exif-hint show"; hint.innerHTML=`<span>${msgs.map(esc).join("　")}${meta.date?"<br>撮影日時を反映しました":""}${guide}</span>`;
     if(meta.date && !noLoc && !photoLocLocked) refreshTide(); // 場所はあるが座標なし → 既存の場所名で潮汐
   }
@@ -1269,20 +1342,23 @@ async function readPhotoExif(file){
 async function reverseGeocodeName(lat, lon){
   const ck=`revname:${lat.toFixed(4)},${lon.toFixed(4)}`;
   const c=localStorage.getItem(ck); if(c) return c;
+  // 国土地理院の町名も同時に取りに行き、Photonが3秒で返らない・名前が無いときの予備にする
+  const gsiName=fetchText(`https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`, {timeout:6000})
+    .then(t=>{ const r=JSON.parse(t).results; return (r && r.lv01Nm && /[^\s－-]/.test(r.lv01Nm)) ? r.lv01Nm : null; })
+    .catch(()=>null);
+  let name=null;
   try{
-    const j=JSON.parse(await fetchText(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=default`));
+    const j=JSON.parse(await fetchText(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&lang=default`, {timeout:3000}));
     const p=j.features && j.features[0] && j.features[0].properties;
-    if(!p) return null;
-    // 公園・港・施設などの固有名(name)を最優先。無ければ「市区町村＋地区」で釣り場が分かる形に。
-    let name=null;
-    if(p.name && p.osm_value!=="restaurant" && p.osm_value!=="cafe" && p.osm_value!=="shop"){
-      name=p.name;
-    }else{
-      name=[p.city, p.district].filter(Boolean).join(" ") || p.name || p.street || p.county || null;
+    if(p){
+      // 公園・港・施設などの固有名(name)を最優先。無ければ「市区町村＋地区」で釣り場が分かる形に。
+      if(p.name && p.osm_value!=="restaurant" && p.osm_value!=="cafe" && p.osm_value!=="shop") name=p.name;
+      else name=[p.city, p.district].filter(Boolean).join(" ") || p.name || p.street || p.county || null;
     }
-    if(name){ try{ localStorage.setItem(ck,name); }catch(e){} }
-    return name;
-  }catch(e){ return null; }
+  }catch(e){ /* 予備へ */ }
+  if(!name) name=await gsiName;
+  if(name){ try{ localStorage.setItem(ck,name); }catch(e){} }
+  return name;
 }
 
 // 設定タブ：写真の位置情報チェック（本体のreadPhotoExifを再利用）
@@ -1322,7 +1398,7 @@ function resetForm(){
   el("fish-list").innerHTML=""; addFishRow();
   userEditedDate=false; userEditedLoc=false; // 写真の自動反映を再び許可
   photoDateLocked=false; photoLocLocked=false; // 写真FIXを解除（新しい釣行）
-  hideLocMap();
+  hideLocMap(); setGpsMsg("");
   editingId=null; editingCreatedAt=null; editingWeather=null; setEditingUI(false); // 編集モード解除
   refreshTide();
 }
@@ -1359,7 +1435,7 @@ async function saveTrip(){
     end: span?span.end:null,       // 釣行 終了（分・手動）
     time: el("f-start").value||"", // 互換: 一覧表示用に開始時刻文字列も保持
     loc,
-    lat: formLat, lon: formLon, geoSrc: formGeoSrc, // 釣り場の座標と出どころ（地図ピン・天気用）
+    lat: formLat, lon: formLon, geoSrc: formGeoSrc, geoV: GEO_VER, // 釣り場の座標と出どころ（地図ピン・天気用）
     weather,
     pc: currentPort ? currentPort.pc : null, hc: currentPort ? currentPort.hc : null,
     tide: currentTide && currentTide.date===dateStr ? currentTide : null, // 潮汐スナップショット
@@ -1466,6 +1542,7 @@ async function renderHistory(){
       ${fishHtml}
       ${tideInfo}
       ${r.weather?`<div class="kv"><b>天気:</b> ${fmtWeather(r.weather)}</div>`:""}
+      ${r.geoCheck==="mismatch"?`<div class="kv" style="color:var(--warn)">⚠️ 場所名で探した位置が、この記録の潮汐の港から離れています。場所名か潮汐のどちらかが違う可能性があります。「編集」を押すと、場所名から位置と潮汐を出し直して確認できます。</div>`:""}
       ${r.tackle?`<div class="kv"><b>タックル:</b> ${esc(r.tackle).replace(/\n/g,"、")}</div>`:""}
       ${r.memo?`<div class="kv"><b>メモ:</b> ${esc(r.memo).replace(/\n/g,"<br>")}</div>`:""}
       <div class="acts">
@@ -1506,42 +1583,64 @@ function recRepMinute(r){
   const span=(r.start!=null||r.end!=null) ? {start:r.start, end:r.end} : (r.time ? {start:parseHM(r.time), end:null} : null);
   return repMinute(span, (r.fish||[]).map(f=>f.t));
 }
+// あわせて、以前の検索（別の地名に当たることがあった）で付けた場所名由来の座標を取り直す。
+// 記録の潮汐は書き換えない。場所名の位置が潮汐の港から離れすぎているときは座標を付けず、編集での確認を促す。
+const GEO_HARBOR_MAX_KM=80;
 async function backfillRecords(){
   if(_bfRunning || navigator.onLine===false) return;
   _bfRunning=true;
-  let changed=false;
+  let changed=false, fixed=0;
   try{
     const recs=await dbGetAllRecords();
     let n=0;
     for(const r of recs){
       if(n>=40) break;
       if(_bfFailed.has(r.id)) continue;
+      const loc=(r.loc||"").trim();
+      const dateOK = /^\d{4}-\d{2}-\d{2}$/.test(r.date||"") && dayDiffFromToday(r.date)<=0;
       const hasGeo = r.lat!=null && r.lon!=null;
-      const needGeo = !hasGeo && !!(r.loc||"").trim();
-      const needWx = !r.weather && /^\d{4}-\d{2}-\d{2}$/.test(r.date||"") && dayDiffFromToday(r.date)<=0;
+      const stalePlace = hasGeo && r.geoSrc==="place" && r.geoV!==GEO_VER; // 古い検索で付けた目安の座標
+      const needGeo = !!loc && (!hasGeo || stalePlace) && !r.geoCheck;
+      const needWx = !r.weather && dateOK;
       if(!needGeo && !(needWx && hasGeo)) continue;
       n++;
       try{
-        const patch={};
-        let lat=r.lat, lon=r.lon;
-        if(needGeo){ const g=await geocode(r.loc.trim()); lat=patch.lat=g.lat; lon=patch.lon=g.lon; patch.geoSrc="place"; }
-        if(needWx && lat!=null && lon!=null){
-          const day=await getWeatherDay(lat, lon, r.date);
-          if(day) patch.weather=weatherAt(day, recRepMinute(r));
+        let lat=r.lat, lon=r.lon, geoCheck=null, weather=null;
+        if(needGeo){
+          let g=null;
+          try{ g=await geocode(loc); }
+          catch(e){ if(e && e.notFound) geoCheck="notfound"; else throw e; } // 通信の失敗なら次回やり直す
+          if(g && r.pc!=null && r.hc!=null){
+            const h=(await getHarbors(r.pc)).find(x=>String(x.hc)===String(r.hc));
+            if(h && isFinite(h.lat) && isFinite(h.lon) && haversine(g.lat, g.lon, h.lat, h.lon)>GEO_HARBOR_MAX_KM){ g=null; geoCheck="mismatch"; }
+          }
+          lat=g?g.lat:null; lon=g?g.lon:null;
         }
-        if(!Object.keys(patch).length){ _bfFailed.add(r.id); continue; }
-        // 取得中に編集されていても壊さないよう、書く直前に読み直して足りない項目だけ埋める
+        const moved = needGeo && hasGeo && (lat==null || haversine(r.lat, r.lon, lat, lon)>3);
+        if((needWx || moved) && dateOK && lat!=null && lon!=null){
+          const day=await getWeatherDay(lat, lon, r.date);
+          if(day) weather=weatherAt(day, recRepMinute(r));
+        }
+        // 取得中に編集されていても壊さないよう、書く直前に読み直し、読んだときと同じ状態の項目だけ書く
         const fresh=await dbGetRecord(r.id);
         if(!fresh) continue;
         let did=false;
-        if(patch.lat!=null && fresh.lat==null && (fresh.loc||"").trim()===r.loc.trim()){ fresh.lat=patch.lat; fresh.lon=patch.lon; fresh.geoSrc=patch.geoSrc; did=true; }
-        if(patch.weather && !fresh.weather && fresh.date===r.date && fresh.lat!=null && patch.weather.k===wxKey(fresh.lat, fresh.lon, fresh.date)){ fresh.weather=patch.weather; did=true; }
+        const sameGeo = (fresh.lat==null && r.lat==null) || (fresh.lat===r.lat && fresh.lon===r.lon);
+        if(needGeo && (fresh.loc||"").trim()===loc && sameGeo){
+          fresh.lat=lat; fresh.lon=lon; fresh.geoSrc = lat!=null ? "place" : null;
+          fresh.geoV=GEO_VER;
+          if(geoCheck) fresh.geoCheck=geoCheck;
+          if(moved){ fresh.weather=null; fixed++; } // 違う場所の天気は消す（下で取り直せていれば入れ直す）
+          did=true;
+        }
+        if(weather && !fresh.weather && fresh.date===r.date && fresh.lat!=null && weather.k===wxKey(fresh.lat, fresh.lon, fresh.date)){ fresh.weather=weather; did=true; }
         if(did){ await dbPutRecord(fresh); changed=true; }
-        if(!did || (needWx && !patch.weather)) _bfFailed.add(r.id); // 付けられなかったものは今回はあきらめる（次回起動時にやり直す）
+        if(!did || (dateOK && !fresh.weather && fresh.lat!=null)) _bfFailed.add(r.id); // 付けられなかったものは今回はあきらめる（次回起動時にやり直す）
       }catch(e){ _bfFailed.add(r.id); }
     }
   }catch(e){ /* 次に履歴を開いたときにやり直す */ }
   finally{ _bfRunning=false; }
+  if(fixed) toast(`場所の位置を${fixed}件見直しました`);
   if(changed && el("view-history").classList.contains("on")) renderHistory(); // 付いた天気・地図ボタンを表示（残りがあれば続きも進む）
 }
 
@@ -1558,7 +1657,9 @@ async function startEdit(r){
   userEditedDate=true; userEditedLoc=!!r.loc;
   photoDateLocked=true; photoLocLocked=!!r.loc; // 既存記録：写真追加で日時・場所を変えない
   editingWeather=r.weather||null;
-  if(r.lat!=null && r.lon!=null) showLocMap(r.lat, r.lon, r.geoSrc||"photo"); else hideLocMap();
+  // 古い検索で付いた目安の座標や、位置が食い違っている記録は、保存済みの値を信用せず場所名から出し直す
+  const recheck = (r.geoSrc==="place" && r.geoV!==GEO_VER) || r.geoCheck==="mismatch";
+  if(r.lat!=null && r.lon!=null && !recheck) showLocMap(r.lat, r.lon, r.geoSrc||"photo"); else hideLocMap();
   // 魚の行（写真Blobはフォーム用にdataURLへ）
   el("fish-list").innerHTML="";
   const fishArr = r.fish && r.fish.length ? r.fish : [{}];
@@ -1568,11 +1669,12 @@ async function startEdit(r){
     addFishRow(f.name||"", f.size||"", photoData, f.t!=null?f.t:null);
   }
   // 保存済みの潮汐スナップショットがあれば復元（無ければ場所から取り直す）
-  if(r.tide){ currentTide=r.tide; currentPort={pc:r.pc,hc:r.hc,name:r.tide.harborName}; renderTide(r.tide); }
+  const keepTide = r.tide && !recheck;
+  if(keepTide){ currentTide=r.tide; currentPort={pc:r.pc,hc:r.hc,name:r.tide.harborName}; renderTide(r.tide); }
   else { currentTide=null; currentPort=null; }
   setEditingUI(true);
   switchView("log");
-  if(!r.tide) refreshTide();
+  if(!keepTide) refreshTide();
   window.scrollTo(0,0);
   toast("編集モードにしました");
 }
@@ -1777,6 +1879,8 @@ async function init(){
   buildLocUI();
   buildTackleChips();
   try{ await migrateFromLocalStorage(); }catch(e){ console.warn("移行スキップ", e); }
+  // 以前の場所検索の保存結果（別の地名に当たっていた可能性あり）を捨てる
+  try{ Object.keys(localStorage).filter(k=>k.startsWith("geo-cache:")||k.startsWith("harbor-cache:")).forEach(k=>localStorage.removeItem(k)); }catch(e){}
 
   el("f-date").value=ymd(new Date());
   el("fish-list").innerHTML=""; addFishRow();
@@ -1811,6 +1915,8 @@ async function init(){
   document.querySelectorAll(".tabbar button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
   el("lightbox").onclick=closeLightbox;
   el("map-lightbox").onclick=closeMapLightbox;
+  // 写真の位置が実際の釣り場と違うとき用：ピンを外し、場所名があればその位置で出し直す
+  el("loc-map-clear").onclick=e=>{ e.preventDefault(); hideLocMap(); photoLocLocked=false; setGpsMsg(""); refreshTide(); };
   window.addEventListener("resize", ()=>{ if(currentTide && el("view-log").classList.contains("on")) drawTide(el("tide-canvas"), currentTide, tripSpan(), collectFishMarks()); });
 
   refreshTide(); // 起動時は場所未入力 → 案内表示
